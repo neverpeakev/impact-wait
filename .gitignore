@@ -1,0 +1,7 @@
+node_modules/
+tests/e2e/react-app.js
+*.png
+__pycache__/
+.env
+.env.*
+.DS_Store

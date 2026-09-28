@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ImpactWait - every AI wait can do some good</title>
+<meta name="description" content="A one-line add-on for AI apps: the 'thinking...' moment shows one sponsored line, and part of the revenue funds a good cause. Live public counter.">
+<meta property="og:title" content="ImpactWait - every AI wait can do some good">
+<meta property="og:description" content="Live counter of sponsored AI waits across every app using ImpactWait.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2312805c'/%3E%3Cpath d='M10 17l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#fbfaf7; --fg:#141414; --muted:#666; --line:#e6e3dc; --card:#fff; --good:#12805c; --code:#f3f1ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#131313; --fg:#eee; --muted:#a3a3a3; --line:#2c2c2c; --card:#1b1b1b; --good:#3ecf8e; --code:#222; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:48px 16px 72px; }
+  .kicker { color:var(--good); font-weight:700; letter-spacing:.04em; text-transform:uppercase; font-size:13px; }
+  h1 { font-size:clamp(30px,6vw,52px); line-height:1.08; margin:8px 0 14px; letter-spacing:-.02em; }
+  .lede { font-size:19px; color:var(--muted); max-width:640px; margin:0 0 30px; }
+  .counter { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 24px; }
+  .big { font-size:clamp(44px,10vw,84px); font-weight:800; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
+  .big-label { color:var(--muted); margin-top:6px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:22px; }
+  .stat { border-top:1px solid var(--line); padding-top:10px; }
+  .stat b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:14px; }
+  .live { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); float:right; }
+  .live i { width:8px; height:8px; border-radius:50%; background:var(--good); animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  @media (prefers-reduced-motion: reduce) { .live i { animation:none; } }
+  h2 { font-size:22px; margin:44px 0 12px; }
+  .cause { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; }
+  ol.board { list-style:none; margin:0; padding:0; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  ol.board li { display:flex; justify-content:space-between; gap:12px; padding:12px 18px; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  ol.board li:first-child { border-top:0; }
+  ol.board .n { color:var(--muted); width:28px; display:inline-block; }
+  .empty { color:var(--muted); }
+  .steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+  .step b { display:block; margin-bottom:4px; }
+  .tabs { display:flex; gap:6px; margin:0 0 8px; }
+  .tabs button { font:inherit; font-size:14px; padding:6px 12px; border-radius:99px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  .tabs button[aria-selected="true"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:12px; padding:14px 16px; overflow:auto; font-size:13.5px; line-height:1.5; margin:0; }
+  .cta { display:inline-block; margin-top:14px; background:var(--good); color:#fff; text-decoration:none; padding:11px 18px; border-radius:10px; font-weight:650; }
+  .ref { background:var(--card); border:1px dashed var(--good); border-radius:12px; padding:10px 14px; margin-bottom:20px; font-size:15px; }
+  .pane { margin-top:4px; }
+  ol.how { margin:0; padding-left:20px; }
+  ol.how li { margin:4px 0; }
+  .small { color:var(--muted); font-size:14px; margin:10px 0 0; }
+  code { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:0 5px; font-size:.92em; }
+  .tabs { flex-wrap:wrap; }
+  footer { margin-top:56px; color:var(--muted); font-size:14px; border-top:1px solid var(--line); padding-top:16px; }
+  a { color:inherit; }
+</style>
+</head>
+<body>
+<main>
+  <div id="ref" class="ref" hidden></div>
+  <div class="kicker">ImpactWait</div>
+  <h1>Every AI wait can do some good.</h1>
+  <p class="lede">While an AI app is "thinking", it shows one clearly labeled sponsored line. A share of that revenue goes to a good cause, and every wait adds to this public counter.</p>
+
+  <section class="counter" aria-live="polite">
+    <span class="live"><i></i>live</span>
+    <div class="big" id="waits">-</div>
+    <div class="big-label">sponsored AI waits so far, across every app using ImpactWait</div>
+    <div class="stats">
+      <div class="stat"><b id="sites">-</b><span>apps contributing</span></div>
+      <div class="stat"><b id="donated">-</b><span>donated so far (published with receipts)</span></div>
+      <div class="stat"><b id="units">-</b><span id="unitsLabel">funded</span></div>
+    </div>
+  </section>
+
+  <h2>The cause</h2>
+  <div class="cause" id="cause"><span class="empty">Loading...</span></div>
+
+  <h2>Leaderboard</h2>
+  <ol class="board" id="board"><li class="empty">Loading...</li></ol>
+
+  <h2>Add it to your AI app</h2>
+  <div class="steps">
+    <div class="step"><b>1. Install</b>A plugin for Open WebUI, a ready fork of LibreChat or the Vercel AI Chatbot, or one tag for any web app.</div>
+    <div class="step"><b>2. Pick a site key</b>Any name you like, e.g. <code>lincoln-high</code>. It registers on first use and joins the leaderboard.</div>
+    <div class="step"><b>3. That's it</b>Views only count after 1 second on screen. No cookies, no user tracking, no ad keys on your server.</div>
+  </div>
+  <div style="margin-top:16px">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="owui">Open WebUI</button>
+      <button role="tab" aria-selected="false" data-tab="libre">LibreChat</button>
+      <button role="tab" aria-selected="false" data-tab="vercel">Vercel AI Chatbot</button>
+      <button role="tab" aria-selected="false" data-tab="html">HTML</button>
+      <button role="tab" aria-selected="false" data-tab="react">React</button>
+    </div>
+    <div class="pane" data-pane="owui">
+      <ol class="how">
+        <li><a href="/openwebui/impact_wait_filter.py" download>Download the filter</a> (one Python file).</li>
+        <li>Admin Panel &gt; Functions &gt; <b>+</b> &gt; Import, and pick the file.</li>
+        <li>Open its <b>Valves</b> and set <code>site</code> to your key.</li>
+        <li>Turn it on and make it <b>Global</b> (three-dot menu).</li>
+      </ol>
+      <p class="small">Runs sandboxed in the user's browser. Nothing is sent from your server. Users can switch it off in Settings &gt; Functions. Tested on Open WebUI 0.11.</p>
+    </div>
+    <div class="pane" data-pane="libre" hidden>
+      <pre># fresh install: our LibreChat fork
+git clone https://github.com/neverpeakev/impact-librechat.git
+cd impact-librechat &amp;&amp; cp .env.example .env
+echo "IMPACT_WAIT_SITE=<span class="k">your-site</span>" &gt;&gt; .env
+docker compose up -d</pre>
+      <p class="small">Already running LibreChat? Apply <a href="/librechat.patch" download>the patch</a> (<code>git apply librechat.patch</code>) and rebuild. Users get a "Show Sponsored Line While Waiting" switch in Settings &gt; Chat. <code>IMPACT_WAIT=off</code> turns it off for everyone.</p>
+    </div>
+    <div class="pane" data-pane="vercel" hidden>
+      <p style="margin:0 0 10px">The official Vercel AI Chatbot template with ImpactWait built in.</p>
+      <a class="cta" style="margin-top:0" href="https://github.com/neverpeakev/impact-chatbot#deploy-your-own">Deploy to Vercel</a>
+      <p class="small">Set <code>NEXT_PUBLIC_IMPACT_WAIT_SITE</code> to your key. Source: <a href="https://github.com/neverpeakev/impact-chatbot">neverpeakev/impact-chatbot</a>.</p>
+    </div>
+    <div class="pane" data-pane="html" hidden>
+      <pre>&lt;script src="https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait/embed.js" defer&gt;&lt;/script&gt;
+&lt;impact-wait id="iw" site="<span class="k">your-site</span>"&gt;&lt;/impact-wait&gt;
+&lt;script&gt;
+  const iw = document.getElementById("iw");
+  // when the user sends a message:
+  iw.query = userMessage; iw.active = true;
+  // when the reply is done:
+  iw.active = false;
+&lt;/script&gt;</pre>
+    </div>
+    <div class="pane" data-pane="react" hidden>
+      <pre>npm i github:neverpeakev/impact-wait
+
+import { ImpactWait } from "impact-wait/react";
+
+&lt;ImpactWait site="<span class="k">your-site</span>" active={isLoading} query={lastUserMessage} /&gt;</pre>
+    </div>
+  </div>
+  <a class="cta" href="/demo">Try the live demo</a>
+
+  <h2>Run AI chat for a school or nonprofit?</h2>
+  <div class="cause">
+    <p style="margin:0 0 8px">We'll set it up with you for free, on a 20-minute call. You keep full control: one switch turns it off for everyone, and each user can turn it off for themselves.</p>
+    <a class="cta" style="margin-top:4px" href="mailto:kevin@neverpeakmarketing.com?subject=ImpactWait%20setup&amp;body=Our%20org%3A%0AWhat%20we%20run%20(Open%20WebUI%2C%20LibreChat%2C%20other)%3A%0AApprox.%20users%3A%0A">Get set up free</a>
+  </div>
+
+  <footer>
+    ImpactWait is an early project by Never Peak. Donations are published here with receipts as they're made. Questions or want to be a launch partner: <a href="mailto:kevin@neverpeakmarketing.com?subject=ImpactWait">kevin@neverpeakmarketing.com</a>
+  </footer>
+</main>
+<script>
+  const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+  const params = new URLSearchParams(location.search);
+  const ref = (params.get("ref") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 41);
+  if (ref) { $("ref").hidden = false; $("ref").textContent = `You came from "${ref}". Their users' waits are on the board below.`; }
+  document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-tab]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    document.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== b.dataset.tab; });
+  }));
+  let shown = null;
+  function animate(to) {
+    const from = shown == null ? 0 : shown; shown = to;
+    const t0 = performance.now(), d = 900;
+    const step = (t) => { const p = Math.min(1, (t - t0) / d); $("waits").textContent = fmt(Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)))); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+  async function load() {
+    try {
+      const r = await fetch(`${API}/stats${ref ? "?site=" + encodeURIComponent(ref) : ""}`);
+      const s = await r.json();
+      animate(s.total.sponsored_waits);
+      $("sites").textContent = fmt(s.total.sites);
+      const i = s.impact || {};
+      $("donated").textContent = "$" + Number(i.donated_usd || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      $("units").textContent = i.units_funded != null ? fmt(i.units_funded) : "-";
+      $("unitsLabel").textContent = i.unit_label ? `${i.unit_label} funded` : "funded (once a cause partner is live)";
+      const c = $("cause"); c.textContent = "";
+      if (i.cause_name) {
+        const p = document.createElement("p"); p.style.margin = "0";
+        p.textContent = `${i.pledge_pct ? i.pledge_pct + "% of sponsored revenue" : "Sponsored revenue"} goes to `;
+        const a = document.createElement(i.cause_url ? "a" : "b"); a.textContent = i.cause_name; if (i.cause_url) { a.href = i.cause_url; a.target = "_blank"; a.rel = "noopener"; }
+        p.append(a, document.createTextNode("."));
+        c.append(p);
+      } else {
+        c.innerHTML = '<span class="empty">Cause partner announcing soon. Every donation will be published here with its receipt, so the numbers above are always real money, never estimates.</span>';
+      }
+      const b = $("board"); b.textContent = "";
+      if (!s.leaderboard.length) b.innerHTML = '<li class="empty">No apps yet. Be the first.</li>';
+      s.leaderboard.forEach((row, k) => {
+        const li = document.createElement("li");
+        const left = document.createElement("span"); const n = document.createElement("span"); n.className = "n"; n.textContent = k + 1;
+        left.append(n, document.createTextNode(row.name || row.site_key));
+        const right = document.createElement("span"); right.textContent = `${fmt(row.sponsored_waits)} ${row.sponsored_waits === 1 ? "wait" : "waits"}`;
+        li.append(left, right); b.append(li);
+      });
+    } catch (e) { $("waits").textContent = "-"; }
+  }
+  load(); setInterval(load, 15000);
+</script>
+</body>
+</html>

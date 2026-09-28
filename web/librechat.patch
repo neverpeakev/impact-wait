@@ -1,0 +1,605 @@
+diff --git a/.env.example b/.env.example
+index 454f846..c08f771 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1454,3 +1454,11 @@ OPENWEATHER_API_KEY=
+ 
+ # Circuit breaker: max backoff cap (ms) for exponential backoff
+ # MCP_CB_MAX_BACKOFF_MS=300000
++
++#==================================================#
++#                    ImpactWait                    #
++#==================================================#
++# While a reply generates, show one labeled sponsored line; part of the revenue funds a cause.
++# Only the user's latest message and the site key leave the browser. localhost is never counted.
++# IMPACT_WAIT=off                # disable for everyone
++# IMPACT_WAIT_SITE=lincoln-high   # leaderboard site key (default: derived from the hostname)
+diff --git a/.prettierignore b/.prettierignore
+index fff14af..b8f4119 100644
+--- a/.prettierignore
++++ b/.prettierignore
+@@ -1,3 +1,6 @@
+ # Generated artifact. Owned by `npm run -w @librechat/api openapi:generate`,
+ # checked by `openapi:check`. Do not let Prettier reformat it.
+ packages/api/openapi/agents.openapi.json
++
++# Vendored ImpactWait web component, kept byte-identical to upstream so upgrades are a copy.
++client/src/components/Chat/Messages/ImpactWait/element.js
+diff --git a/NOTICE b/NOTICE
+new file mode 100644
+index 0000000..fd57b39
+--- /dev/null
++++ b/NOTICE
+@@ -0,0 +1,14 @@
++Impact LibreChat
++Copyright 2026 Never Peak
++
++This product is a modified version of LibreChat (https://github.com/danny-avila/LibreChat),
++Copyright (c) LibreChat contributors, licensed under the MIT License (see LICENSE).
++It is not affiliated with or endorsed by the LibreChat project.
++
++Modifications (2026), all for ImpactWait:
++- client/src/components/Chat/Messages/ImpactWait/ (new): the sponsored line, site-key helper, tests;
++  element.js is the MIT-licensed <impact-wait> web component, vendored byte-for-byte.
++- client/src/components/Chat/Messages/MessagesView.tsx: renders <ImpactWait /> while a reply generates.
++- client/src/store/impactWait.ts (new) + Settings registry/context/types + en translation: per-user toggle.
++- api/server/routes/config.js + packages/data-provider/src/config.ts: IMPACT_WAIT / IMPACT_WAIT_SITE in startup config.
++- .env.example, .prettierignore, README.md, NOTICE.
+diff --git a/README.md b/README.md
+index 279604d..dc8657f 100644
+--- a/README.md
++++ b/README.md
+@@ -51,6 +51,23 @@
+   </a>
+ </p>
+ 
++## ImpactWait edition
++
++> Fork of [LibreChat](https://github.com/danny-avila/LibreChat) (MIT). Not affiliated with the LibreChat project. See [NOTICE](NOTICE).
++
++While a reply is generating, users see one clearly labeled sponsored line under the in-progress answer. Part of the revenue funds a charity partner, and every wait adds to a public live counter. It disappears a few seconds after the reply finishes and is never saved in chat history.
++
++- **Zero setup.** The site key comes from your hostname (`chat.example.edu` becomes `chat-example-edu`) and joins the public leaderboard on first use.
++- **Privacy.** Only the user's latest message (to pick a relevant sponsor) and the site key leave the browser. No names, account IDs, chat history or cookies.
++- **Honest counting.** A view counts only after the line is at least 50% on screen, in a visible tab, for 1 full second.
++- **Local dev is a sandbox.** `localhost`, `127.0.0.1` and `*.local` get a house ad marked "Test mode"; nothing is counted.
++- **Opt-outs.** `IMPACT_WAIT=off` turns it off for everyone. Each user can turn it off in Settings > Chat > "Show Sponsored Line While Waiting".
++
++| Env var | What it does |
++| --- | --- |
++| `IMPACT_WAIT_SITE` | Optional leaderboard site key (2-41 chars: a-z, 0-9, dash). Default: derived from the hostname. |
++| `IMPACT_WAIT=off` | Disables ImpactWait completely. |
++
+ ## 🚀 What's New in v0.8.8-rc4
+ 
+ - **Public Agents API docs:** Serve an OpenAPI specification and interactive Swagger UI for inference, events, Agent management, and Skill management.
+diff --git a/api/server/routes/config.js b/api/server/routes/config.js
+index d3e3682..9682a2d 100644
+--- a/api/server/routes/config.js
++++ b/api/server/routes/config.js
+@@ -153,6 +153,10 @@ function buildPostLoginPayload() {
+     allowAccountDeletion:
+       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
+       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
++    impactWait: {
++      enabled: process.env.IMPACT_WAIT?.trim().toLowerCase() !== 'off',
++      site: process.env.IMPACT_WAIT_SITE?.trim() || undefined,
++    },
+   };
+ 
+   return payload;
+diff --git a/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx b/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx
+new file mode 100644
+index 0000000..67a8a65
+--- /dev/null
++++ b/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx
+@@ -0,0 +1,76 @@
++import { createElement, useContext, useEffect, useState } from 'react';
++import { useAtomValue } from 'jotai';
++import { ThemeContext, isDark } from '@librechat/client';
++import type { CSSProperties } from 'react';
++import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
++import { showImpactWaitAtom } from '~/store/impactWait';
++import { useGetStartupConfig } from '~/data-provider';
++import { resolveSiteKey } from './site';
++import { cn } from '~/utils';
++import './element';
++
++type ImpactWaitElement = HTMLElement & { query: string };
++
++/** The element styles itself in a shadow root; these hooks point its colors at the
++ *  app's semantic tokens so custom and high-contrast themes reach it too. */
++const themeTokens = {
++  '--iw-bg': 'rgb(var(--surface-primary-alt))',
++  '--iw-fg': 'rgb(var(--text-primary))',
++  '--iw-muted': 'rgb(var(--text-secondary))',
++  '--iw-line': 'rgb(var(--border-light))',
++  '--iw-tag': 'rgb(var(--surface-tertiary))',
++  '--iw-accent': 'rgb(var(--link))',
++} as CSSProperties;
++
++/**
++ * One labeled sponsored line (the vendored `<impact-wait>` element) under the
++ * in-progress response. It fetches only while `active`, sends nothing but the
++ * site key and `query`, counts a view after 1s at least half on screen, and
++ * hides itself a few seconds after `active` clears.
++ */
++export default function ImpactWait({
++  active,
++  query,
++  maximizeChatSpace = false,
++}: {
++  active: boolean;
++  query: string;
++  maximizeChatSpace?: boolean;
++}) {
++  const { theme } = useContext(ThemeContext);
++  const { data: startupConfig } = useGetStartupConfig();
++  const showImpactWait = useAtomValue(showImpactWaitAtom);
++  const [element, setElement] = useState<ImpactWaitElement | null>(null);
++
++  const config = startupConfig?.impactWait;
++  const site =
++    config?.enabled === true && showImpactWait
++      ? resolveSiteKey(config.site, window.location.hostname)
++      : '';
++
++  useEffect(() => {
++    if (element == null) {
++      return;
++    }
++    element.query = query;
++    element.toggleAttribute('active', active && query.trim() !== '');
++  }, [element, active, query]);
++
++  if (!site) {
++    return null;
++  }
++
++  return (
++    <div className="w-full px-4 sm:px-0">
++      <div className={cn('mx-auto', getMessageRowWidthClass({ fullWidth: maximizeChatSpace }))}>
++        {createElement('impact-wait', {
++          ref: setElement,
++          site,
++          style: themeTokens,
++          theme: isDark(theme) ? 'dark' : 'light',
++          'data-testid': 'impact-wait',
++        })}
++      </div>
++    </div>
++  );
++}
+diff --git a/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts b/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts
+new file mode 100644
+index 0000000..2f8abdf
+--- /dev/null
++++ b/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts
+@@ -0,0 +1,31 @@
++import { resolveSiteKey, siteKeyFromHost } from '../site';
++
++describe('siteKeyFromHost', () => {
++  it('derives a key from the hostname', () => {
++    expect(siteKeyFromHost('chat.example.edu')).toBe('chat-example-edu');
++    expect(siteKeyFromHost('www.Example.com')).toBe('example-com');
++    expect(siteKeyFromHost('localhost')).toBe('localhost');
++  });
++
++  it('caps the key at 41 characters without a trailing dash', () => {
++    const key = siteKeyFromHost(`${'a'.repeat(40)}.example.com`);
++    expect(key).toBe('a'.repeat(40));
++    expect(siteKeyFromHost(`${'b'.repeat(39)}.c.example.com`)).toBe(`${'b'.repeat(39)}-c`);
++  });
++
++  it('returns an empty key when nothing usable remains', () => {
++    expect(siteKeyFromHost('')).toBe('');
++    expect(siteKeyFromHost('a')).toBe('');
++  });
++});
++
++describe('resolveSiteKey', () => {
++  it('prefers a valid configured key', () => {
++    expect(resolveSiteKey(' Lincoln-High ', 'chat.example.edu')).toBe('lincoln-high');
++  });
++
++  it('falls back to the host when the configured key is missing or invalid', () => {
++    expect(resolveSiteKey(undefined, 'chat.example.edu')).toBe('chat-example-edu');
++    expect(resolveSiteKey('no spaces allowed', 'chat.example.edu')).toBe('chat-example-edu');
++  });
++});
+diff --git a/client/src/components/Chat/Messages/ImpactWait/element.js b/client/src/components/Chat/Messages/ImpactWait/element.js
+new file mode 100644
+index 0000000..575c30d
+--- /dev/null
++++ b/client/src/components/Chat/Messages/ImpactWait/element.js
+@@ -0,0 +1,181 @@
++/*! ImpactWait v0.1.0 | MIT | Turn AI "thinking..." time into sponsored, cause-funding moments.
++ *
++ * <impact-wait site="your-app" active query="the user's prompt"></impact-wait>
++ *
++ * Put it where your chat shows "thinking...". Set `active` while the model is
++ * generating and `query` to the user's last message. It fetches one sponsored
++ * line, shows it, and reports the view only after it has been at least 50% on
++ * screen for 1 second. Remove `active` when the reply is done; it lingers
++ * briefly, then hides. No cookies, no user IDs, no ad keys in the browser.
++ */
++(() => {
++  const DEFAULT_ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
++  const HOME = "https://impact-wait.vercel.app";
++  if (typeof window === "undefined" || !window.customElements || customElements.get("impact-wait")) return;
++
++  const CSS = `
++:host { display:block; font:13px/1.35 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --iw-bg:#fff; --iw-fg:#111; --iw-muted:#666; --iw-line:rgba(0,0,0,.12); --iw-tag:#f1f1f1; --iw-accent:#0b6bcb; --iw-good:#12805c; }
++:host([theme="dark"]) { --iw-bg:#232323; --iw-fg:#ececec; --iw-muted:#a8a8a8; --iw-line:rgba(255,255,255,.14); --iw-tag:#333; --iw-accent:#6cb4ff; --iw-good:#3ecf8e; }
++@media (prefers-color-scheme: dark) { :host(:not([theme="light"])) { --iw-bg:#232323; --iw-fg:#ececec; --iw-muted:#a8a8a8; --iw-line:rgba(255,255,255,.14); --iw-tag:#333; --iw-accent:#6cb4ff; --iw-good:#3ecf8e; } }
++:host([hidden]) { display:none; }
++.card { box-sizing:border-box; border:1px solid var(--iw-line); border-radius:12px; background:var(--iw-bg); color:var(--iw-fg); padding:8px 10px; opacity:0; transform:translateY(3px); transition:opacity .18s ease, transform .18s ease; }
++.card.on { opacity:1; transform:none; }
++.row { display:flex; align-items:center; gap:8px; min-width:0; }
++.tag { flex:none; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--iw-muted); background:var(--iw-tag); border-radius:6px; padding:3px 6px; }
++.fav { flex:none; width:16px; height:16px; border-radius:4px; object-fit:contain; }
++.copy { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:inherit; text-decoration:none; }
++.copy b { font-weight:650; } .copy span { color:var(--iw-muted); margin-left:6px; }
++.copy:hover b { text-decoration:underline; }
++.cta { flex:none; color:var(--iw-accent); font-weight:600; text-decoration:none; }
++.cta:hover { text-decoration:underline; }
++.impact { display:flex; justify-content:space-between; gap:8px; margin-top:5px; font-size:11px; color:var(--iw-muted); }
++.impact .dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--iw-good); margin-right:6px; vertical-align:1px; }
++.impact a { color:var(--iw-muted); text-decoration:none; white-space:nowrap; } .impact a:hover { text-decoration:underline; }
++@media (prefers-reduced-motion: reduce) { .card { transition:none; } }`;
++
++  const fmt = (n) => Number(n || 0).toLocaleString("en-US");
++  const safe = (u) => (typeof u === "string" && /^https:\/\//i.test(u) ? u : "");
++
++  class ImpactWait extends HTMLElement {
++    static get observedAttributes() { return ["active", "query"]; }
++    constructor() {
++      super();
++      this._root = this.attachShadow({ mode: "open" });
++      this._root.innerHTML = `<style>${CSS}</style><div class="card" role="complementary" aria-label="Sponsored" part="card"></div>`;
++      this._card = this._root.querySelector(".card");
++      this._cycle = 0;
++      this._ad = null;
++      // No attributes in the constructor: document.createElement() (React, Vue...) throws if one is added here.
++    }
++    get endpoint() { return (this.getAttribute("endpoint") || DEFAULT_ENDPOINT).replace(/\/+$/, ""); }
++    get site() { return (this.getAttribute("site") || "").toLowerCase(); }
++    get lingerMs() { const v = Number(this.getAttribute("linger")); return Number.isFinite(v) && v >= 0 ? v : 4000; }
++    get query() { return this._query != null ? this._query : (this.getAttribute("query") || ""); }
++    set query(v) { this._query = v == null ? null : String(v); }
++    get response() { return this._response || ""; }
++    set response(v) { this._response = v == null ? "" : String(v); }
++    get active() { return this.hasAttribute("active"); }
++    set active(v) { if (v) this.setAttribute("active", ""); else this.removeAttribute("active"); }
++
++    connectedCallback() {
++      if (!this._ad) this.hidden = true;
++      // Properties set before this script loaded (e.g. by React) shadow our accessors; re-apply them.
++      for (const k of ["query", "response", "active"]) {
++        if (Object.prototype.hasOwnProperty.call(this, k)) { const v = this[k]; delete this[k]; this[k] = v; }
++      }
++      if (this.active) this._start();
++    }
++    disconnectedCallback() { this._on = false; this._stopObserving(); clearTimeout(this._hideT); }
++    attributeChangedCallback(name, oldV, newV) {
++      if (name !== "active" || (oldV === null) === (newV === null)) return;
++      if (newV !== null) this._start(); else this._end();
++    }
++
++    async _start() {
++      if (this._on) return; // attributeChanged + connected can both fire on upgrade
++      this._on = true;
++      const my = ++this._cycle;
++      clearTimeout(this._hideT);
++      // Let the caller set `query` in the same tick as `active`.
++      await Promise.resolve();
++      const query = this.query.trim();
++      if (!this.site || !query) { this._emit("impactwait:skip", { reason: !this.site ? "no site" : "no query" }); return; }
++      let data;
++      try {
++        const r = await fetch(`${this.endpoint}/ad`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ site: this.site, query: query.slice(0, 2000), response: this.response.slice(0, 1500), sessionId: this._session() }) });
++        if (!r.ok) throw new Error("HTTP " + r.status);
++        data = await r.json();
++      } catch (e) {
++        this._emit("impactwait:error", { error: String(e && e.message || e) });
++        return;
++      }
++      if (my !== this._cycle || !data || !data.ad) return;
++      this._render(data);
++      if (!this.active) { clearTimeout(this._hideT); this._hideT = setTimeout(() => this._hide(), Math.min(this.lingerMs, 3000)); }
++    }
++    _end() { this._on = false; clearTimeout(this._hideT); this._hideT = setTimeout(() => this._hide(), this.lingerMs); }
++
++    _session() {
++      try { let s = sessionStorage.getItem("impactwait:s"); if (!s) { s = "iw_" + Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("impactwait:s", s); } return s; } catch (_) { return "iw_" + Date.now().toString(36); }
++    }
++
++    _render({ id, ad, impact, sandbox }) {
++      this._ad = { id, ad, impact, seen: false };
++      const c = this._card;
++      c.textContent = "";
++      const row = el("div", "row");
++      row.append(el("span", "tag", ad.label || "Sponsored"));
++      if (safe(ad.favicon)) { const img = el("img", "fav"); img.alt = ""; img.src = ad.favicon; img.onerror = () => img.remove(); row.append(img); }
++      const head = ad.brand && ad.headline && !ad.headline.toLowerCase().includes(ad.brand.toLowerCase()) ? `${ad.brand} \u00b7 ${ad.headline}` : (ad.headline || ad.brand || "");
++      const copy = link("copy", ad.clickUrl); copy.append(el("b", "", head)); if (ad.body) copy.append(el("span", "", ad.body));
++      copy.title = [head, ad.body].filter(Boolean).join(" - ");
++      row.append(copy, link("cta", ad.clickUrl, (ad.cta || "Learn more") + " \u2192"));
++      const foot = el("div", "impact");
++      const msg = el("span"); msg.append(el("i", "dot")); msg.append(document.createTextNode(sandbox ? "Test mode on this host - views are not counted" : impactLine(impact)));
++      const home = document.createElement("a");
++      home.href = `${HOME}/?ref=${encodeURIComponent(this.site)}`; home.target = "_blank"; home.rel = "noopener"; home.textContent = "Powered by ImpactWait";
++      foot.append(msg, home);
++      c.append(row, foot);
++      this.hidden = false;
++      requestAnimationFrame(() => c.classList.add("on"));
++      this._emit("impactwait:ad", { provider: ad.provider, id });
++      this._observe();
++    }
++
++    // Billable view: >=50% visible, tab visible, for 1s continuously.
++    _observe() {
++      this._stopObserving();
++      const arm = () => { clearTimeout(this._viewT); this._viewT = setTimeout(() => this._impression(), 1000); };
++      const disarm = () => clearTimeout(this._viewT);
++      let inView = false;
++      const check = () => (inView && document.visibilityState === "visible" ? arm() : disarm());
++      if ("IntersectionObserver" in window) {
++        this._io = new IntersectionObserver((es) => { inView = es.some((e) => e.intersectionRatio >= 0.5); check(); }, { threshold: [0, 0.5, 1] });
++        this._io.observe(this._card);
++      } else { inView = true; check(); }
++      this._vis = () => check();
++      document.addEventListener("visibilitychange", this._vis);
++    }
++    _stopObserving() {
++      clearTimeout(this._viewT);
++      if (this._io) { this._io.disconnect(); this._io = null; }
++      if (this._vis) { document.removeEventListener("visibilitychange", this._vis); this._vis = null; }
++    }
++    async _impression() {
++      const a = this._ad;
++      if (!a || a.seen) return;
++      a.seen = true;
++      this._stopObserving();
++      try {
++        await fetch(`${this.endpoint}/event`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: a.id, type: "impression" }), keepalive: true });
++        this._emit("impactwait:impression", { id: a.id, provider: a.ad.provider });
++      } catch (_) { /* best effort */ }
++    }
++    _hide() {
++      this._stopObserving();
++      this._card.classList.remove("on");
++      this.hidden = true;
++      this._ad = null;
++    }
++    _emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true })); }
++  }
++
++  function impactLine(i) {
++    if (!i) return "Sponsored waits help fund this app";
++    const waits = `${fmt(i.sponsored_waits)} sponsored ${Number(i.sponsored_waits) === 1 ? "wait" : "waits"} so far`;
++    if (i.cause_name && i.pledge_pct) {
++      const funded = i.units_funded ? ` \u00b7 ${fmt(i.units_funded)} ${i.unit_label || "funded"} so far` : ` \u00b7 ${waits}`;
++      return `${i.pledge_pct}% of this ad's revenue goes to ${i.cause_name}${funded}`;
++    }
++    return waits;
++  }
++  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
++  function link(cls, href, text) {
++    const a = el("a", cls, text);
++    if (safe(href)) { a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer sponsored"; }
++    return a;
++  }
++
++  customElements.define("impact-wait", ImpactWait);
++  window.ImpactWait = ImpactWait;
++})();
+diff --git a/client/src/components/Chat/Messages/ImpactWait/index.ts b/client/src/components/Chat/Messages/ImpactWait/index.ts
+new file mode 100644
+index 0000000..e55d9e7
+--- /dev/null
++++ b/client/src/components/Chat/Messages/ImpactWait/index.ts
+@@ -0,0 +1,2 @@
++export { default } from './ImpactWait';
++export { resolveSiteKey, siteKeyFromHost } from './site';
+diff --git a/client/src/components/Chat/Messages/ImpactWait/site.ts b/client/src/components/Chat/Messages/ImpactWait/site.ts
+new file mode 100644
+index 0000000..233f2d2
+--- /dev/null
++++ b/client/src/components/Chat/Messages/ImpactWait/site.ts
+@@ -0,0 +1,19 @@
++const SITE_KEY = /^[a-z0-9][a-z0-9-]{1,40}$/;
++
++/** `chat.example.edu` -> `chat-example-edu`, so every deployment gets its own row with zero setup. */
++export function siteKeyFromHost(host: string): string {
++  const key = host
++    .toLowerCase()
++    .replace(/^www\./, '')
++    .replace(/[^a-z0-9]+/g, '-')
++    .replace(/^-+|-+$/g, '')
++    .slice(0, 41)
++    .replace(/-+$/, '');
++  return SITE_KEY.test(key) ? key : '';
++}
++
++/** The operator's `IMPACT_WAIT_SITE` when it is a valid key, else the key derived from the host. */
++export function resolveSiteKey(configured: string | undefined, host: string): string {
++  const site = (configured ?? '').trim().toLowerCase();
++  return SITE_KEY.test(site) ? site : siteKeyFromHost(host);
++}
+diff --git a/client/src/components/Chat/Messages/MessagesView.tsx b/client/src/components/Chat/Messages/MessagesView.tsx
+index 1369a74..aca474f 100644
+--- a/client/src/components/Chat/Messages/MessagesView.tsx
++++ b/client/src/components/Chat/Messages/MessagesView.tsx
+@@ -15,6 +15,7 @@ import { fontSizeAtom } from '~/store/fontSize';
+ import MultiMessage from './MultiMessage';
+ import ScrollButton from './ScrollButton';
+ import PendingTurn from './PendingTurn';
++import ImpactWait from './ImpactWait';
+ import MessageNav from './MessageNav';
+ import { cn } from '~/utils';
+ import store from '~/store';
+@@ -49,6 +50,7 @@ function MessagesViewContent({
+ 
+   const { index, latestMessageDepth } = useChatContext();
+   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
++  const submission = useRecoilValue(store.submissionByIndex(index));
+   const { showScrollButton, maximizeChatSpace } = useChatSurface();
+   const autoScroll = useAtomValue(autoScrollAtom);
+   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
+@@ -131,6 +133,11 @@ function MessagesViewContent({
+                     messages={messages}
+                     maximizeChatSpace={maximizeChatSpace}
+                   />
++                  <ImpactWait
++                    active={isSubmitting}
++                    query={submission?.userMessage?.text ?? ''}
++                    maximizeChatSpace={maximizeChatSpace}
++                  />
+                 </>
+               )}
+               <div
+diff --git a/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx b/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
+index 8272fe9..63b28c2 100644
+--- a/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
++++ b/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
+@@ -21,6 +21,7 @@ const ctx: SettingsContextValue = {
+   engineTTS: 'browser',
+   langfuseConnectionAccess: false,
+   adminPanelURL: '',
++  impactWaitEnabled: false,
+ };
+ 
+ function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
+diff --git a/client/src/components/Nav/Settings/__tests__/registry.spec.ts b/client/src/components/Nav/Settings/__tests__/registry.spec.ts
+index d277ebf..dac650a 100644
+--- a/client/src/components/Nav/Settings/__tests__/registry.spec.ts
++++ b/client/src/components/Nav/Settings/__tests__/registry.spec.ts
+@@ -23,6 +23,7 @@ const settingsContext: SettingsContextValue = {
+   engineTTS: 'browser',
+   langfuseConnectionAccess: false,
+   adminPanelURL: '',
++  impactWaitEnabled: false,
+ };
+ 
+ describe('settings registry', () => {
+diff --git a/client/src/components/Nav/Settings/context.tsx b/client/src/components/Nav/Settings/context.tsx
+index bb725d3..314867d 100644
+--- a/client/src/components/Nav/Settings/context.tsx
++++ b/client/src/components/Nav/Settings/context.tsx
+@@ -30,6 +30,7 @@ export function useSettingsContext(): SettingsContextValue {
+   const balanceEnabled = startupConfig?.balance?.enabled === true;
+   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
+   const adminPanelURL = startupConfig?.adminPanelURL ?? '';
++  const impactWaitEnabled = startupConfig?.impactWait?.enabled === true;
+   const isLocalProvider = user?.provider === 'local';
+   const twoFactorEnabled = user?.twoFactorEnabled === true;
+   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
+@@ -59,6 +60,7 @@ export function useSettingsContext(): SettingsContextValue {
+       engineTTS,
+       langfuseConnectionAccess,
+       adminPanelURL,
++      impactWaitEnabled,
+     }),
+     [
+       balanceEnabled,
+@@ -76,6 +78,7 @@ export function useSettingsContext(): SettingsContextValue {
+       engineTTS,
+       langfuseConnectionAccess,
+       adminPanelURL,
++      impactWaitEnabled,
+     ],
+   );
+ }
+diff --git a/client/src/components/Nav/Settings/registry.tsx b/client/src/components/Nav/Settings/registry.tsx
+index ba831cc..537d29a 100644
+--- a/client/src/components/Nav/Settings/registry.tsx
++++ b/client/src/components/Nav/Settings/registry.tsx
+@@ -44,6 +44,7 @@ import AdminPanel from '../SettingsTabs/General/AdminPanel';
+ import SharedLinks from '../SettingsTabs/Data/SharedLinks';
+ import ImageResize from '../SettingsTabs/Chat/ImageResize';
+ import { showThinkingAtom } from '~/store/showThinking';
++import { showImpactWaitAtom } from '~/store/impactWait';
+ import ProviderKeys from '../SettingsTabs/ProviderKeys';
+ import { autoScrollAtom } from '~/store/autoScroll';
+ import Avatar from '../SettingsTabs/Account/Avatar';
+@@ -364,6 +365,20 @@ export const registry: SettingEntry[] = [
+       switchId: 'showThinking',
+     }),
+   },
++  {
++    id: 'showImpactWait',
++    tab: CHAT,
++    section: 'messages',
++    labelKey: 'com_nav_show_impact_wait',
++    keywords: ['sponsored', 'ads', 'impactwait', 'waiting'],
++    show: (ctx) => ctx.impactWaitEnabled,
++    Component: toggleControl({
++      stateAtom: showImpactWaitAtom,
++      localizationKey: 'com_nav_show_impact_wait',
++      switchId: 'showImpactWait',
++      hoverCardText: 'com_nav_info_show_impact_wait',
++    }),
++  },
+   {
+     id: 'smoothStreaming',
+     tab: CHAT,
+diff --git a/client/src/components/Nav/Settings/types.ts b/client/src/components/Nav/Settings/types.ts
+index faf1c6b..9ee834d 100644
+--- a/client/src/components/Nav/Settings/types.ts
++++ b/client/src/components/Nav/Settings/types.ts
+@@ -53,6 +53,7 @@ export interface SettingsContextValue {
+   engineTTS: string;
+   langfuseConnectionAccess: boolean;
+   adminPanelURL: string;
++  impactWaitEnabled: boolean;
+ }
+ 
+ export interface SettingEntry {
+diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
+index 47b7bfb..79edd0a 100644
+--- a/client/src/locales/en/translation.json
++++ b/client/src/locales/en/translation.json
+@@ -764,6 +764,7 @@
+   "com_nav_info_paste_long_text_as_file": "When enabled, pasting very long text attaches it as a text file instead of filling the message box. File processing limits may apply.",
+   "com_nav_info_save_badges_state": "When enabled, the state of the chat badges will be saved. This means that if you create a new chat, the badges will remain in the same state as the previous chat. If you disable this option, the badges will reset to their default state every time you create a new chat",
+   "com_nav_info_save_draft": "When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.",
++  "com_nav_info_show_impact_wait": "While a reply is generating, show one labeled sponsored line from ImpactWait. Part of its revenue funds a cause. Only your latest message is sent to choose the sponsor; no name, account ID or cookies.",
+   "com_nav_info_show_thinking": "When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI's reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface",
+   "com_nav_info_smooth_streaming": "When enabled, newly streamed words fade in smoothly for the latest response. This is purely visual — it does not delay token delivery — and is disabled automatically when your device prefers reduced motion.",
+   "com_nav_info_stateful_sessions": "When enabled, this agent uses the dedicated stateful Code API instead of the default stateless service. Retained files under /mnt/data carry across runs, but each run starts a fresh process. Shell variables, the working directory, $HOME, temporary files, global installs, and background processes are not durable. The runtime may reset, so keep anything important under /mnt/data. Requires Code Interpreter and the app-level stateful sessions capability.",
+@@ -858,6 +859,7 @@
+   "com_nav_setting_speech": "Speech",
+   "com_nav_settings": "Settings",
+   "com_nav_shared_links": "Shared chats",
++  "com_nav_show_impact_wait": "Show Sponsored Line While Waiting",
+   "com_nav_show_thinking": "Open Thinking Dropdowns by Default",
+   "com_nav_slash_command": "/-Command",
+   "com_nav_slash_command_description": "Toggle command \"/\" for selecting a prompt via keyboard",
+diff --git a/client/src/store/impactWait.ts b/client/src/store/impactWait.ts
+new file mode 100644
+index 0000000..0dff813
+--- /dev/null
++++ b/client/src/store/impactWait.ts
+@@ -0,0 +1,4 @@
++import { createStorageAtom } from './jotai-utils';
++
++/** Per-user opt-out for the ImpactWait sponsored line; the operator switch is `IMPACT_WAIT`. */
++export const showImpactWaitAtom = createStorageAtom<boolean>('showImpactWait', true);
+diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
+index 21288b3..f9348da 100644
+--- a/packages/data-provider/src/config.ts
++++ b/packages/data-provider/src/config.ts
+@@ -2560,6 +2560,12 @@ export type TStartupConfig = {
+   };
+   fileUploadSseEnabled?: boolean;
+   endpointsDropParamsMap?: EndpointsDropParamsMap;
++  /** ImpactWait sponsored line shown while a reply generates: `IMPACT_WAIT=off` disables it,
++   *  `IMPACT_WAIT_SITE` sets the site key (otherwise the client derives one from its hostname). */
++  impactWait?: {
++    enabled: boolean;
++    site?: string;
++  };
+ };
+ 
+ export type TSharedLinkStartupInterface = Pick<
