@@ -19,6 +19,6 @@
   "scripts": {
     "build": "node scripts/build-embed.mjs",
     "test:api": "deno test --allow-net=jsr.io --no-check tests/api_test.ts",
-    "test:e2e": "cd tests/e2e && npm i && npx esbuild react-app.jsx --bundle --outfile=react-app.js && node run.mjs"
+    "test:e2e": "cd tests/e2e && npm i && npx esbuild react-app.jsx --bundle --outfile=react-app.js --alias:react=./node_modules/react && node run.mjs"
   }
 }

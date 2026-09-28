@@ -165,7 +165,7 @@
     const waits = `${fmt(i.sponsored_waits)} sponsored ${Number(i.sponsored_waits) === 1 ? "wait" : "waits"} so far`;
     if (i.cause_name && i.pledge_pct) {
       const funded = i.units_funded ? ` \u00b7 ${fmt(i.units_funded)} ${i.unit_label || "funded"} so far` : ` \u00b7 ${waits}`;
-      return `${i.pledge_pct}% of this ad's revenue goes to ${i.cause_name}${funded}`;
+      return `${i.pledge_pct}% of net ad revenue goes to ${i.cause_name}${funded}`;
     }
     return waits;
   }

@@ -20,14 +20,18 @@ const server = http.createServer((req, res) => {
   res.end(fs.readFileSync(file));
 });
 await new Promise((r) => server.listen(8123, r));
-// A non-dev hostname, so the API treats this like a real site (localhost is sandboxed and never counted).
-const BASE = "http://iw-selftest.example:8123";
+// Default: a *.localhost host, which the API sandboxes (house ad only, nothing counted, nothing sent to paid networks).
+// IW_LIVE=1 uses a real-looking host instead: that serves REAL paid ads and counts impressions, so it is
+// off by default and never follows a click on a paid ad. Clean up the "iw-selftest" rows after a live run.
+const LIVE = process.env.IW_LIVE === "1";
+const HOST = LIVE ? "iw-selftest.example" : "iw-selftest.localhost";
+const BASE = `http://${HOST}:8123`;
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  -- " + detail : ""}`); ok ? pass++ : fail++; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.launch({ args: ["--host-resolver-rules=MAP iw-selftest.example 127.0.0.1"] });
+const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1`] });
 const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
 // Never let tests click through to the real Dub/advertiser links.
 await ctx.route(/^https:\/\/(ref\.wisprflow\.ai|go\.granola\.ai)\//, (r) => r.fulfill({ status: 200, body: "stub" }));
@@ -65,7 +69,7 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   await p.evaluate(() => { const iw = document.getElementById("iw"); iw.query = "help me write an email to my team"; iw.active = true; });
   await p.waitForFunction(() => !document.getElementById("iw").hidden, null, { timeout: 8000 });
   const txt = await shadowText(p, "#iw");
-  check("plain: sponsored line renders with label, ad and impact footer", !/Â|â/.test(txt) && /SPONSORED|Sponsored/i.test(txt) && /Wispr Flow|Granola/.test(txt) && /sponsored waits? so far/.test(txt) && /Powered by ImpactWait/.test(txt), JSON.stringify(txt));
+  check("plain: sponsored line renders with label, ad and impact footer", !/Â|â/.test(txt) && /SPONSORED|Sponsored/i.test(txt) && (LIVE ? /revenue goes to|sponsored waits? so far/.test(txt) : /Wispr Flow|Granola/.test(txt) && /Test mode on this host/.test(txt)) && /Powered by ImpactWait/.test(txt), JSON.stringify(txt));
   const home = await p.evaluate(() => document.getElementById("iw").shadowRoot.querySelector(".impact a").href);
   check("plain: 'Powered by' links to the counter with ?ref=site", home === "https://impact-wait.vercel.app/?ref=iw-selftest", home);
   const adReq = log.find((l) => l.url.endsWith("/ad"));
@@ -75,12 +79,17 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   check("plain: no impression before 1s visible", !log.some((l) => l.url.endsWith("/event")));
   await sleep(900);
   const ev = log.filter((l) => l.url.endsWith("/event"));
-  check("plain: exactly one impression after 1s visible, counted by server", ev.length === 1 && ev[0].json && ev[0].json.counted === true, JSON.stringify(ev.map((e) => e.json)));
+  check(`plain: exactly one impression after 1s visible, ${LIVE ? "counted" : "sandboxed (not counted)"} by server`, ev.length === 1 && ev[0].json && (LIVE ? ev[0].json.counted === true : ev[0].json.counted === false && ev[0].json.sandbox === true), JSON.stringify(ev.map((e) => e.json)));
   const ctaHref = await p.evaluate(() => document.getElementById("iw").shadowRoot.querySelector(".cta").href);
   // Follow the server redirect by hand (never actually visiting the advertiser, so no real Dub clicks).
-  const red = await fetch(ctaHref, { redirect: "manual" });
-  const loc = red.headers.get("location") || "";
-  check("plain: CTA goes through the server click redirect to the advertiser", /\/impact-wait\/click\?id=/.test(ctaHref) && red.status === 302 && /^https:\/\/(ref\.wisprflow\.ai|go\.granola\.ai)\/np-g1\?utm_source=np&utm_medium=impactwait/.test(loc), `${red.status} ${loc}`);
+  if (LIVE) {
+    // Never request /click on a paid ad: it would register a real click with the network.
+    check("plain: CTA goes through the server click redirect (not followed on paid ads)", /\/impact-wait\/click\?id=/.test(ctaHref), ctaHref);
+  } else {
+    const red = await fetch(ctaHref, { redirect: "manual" });
+    const loc = red.headers.get("location") || "";
+    check("plain: CTA goes through the server click redirect to the advertiser", /\/impact-wait\/click\?id=/.test(ctaHref) && red.status === 302 && /^https:\/\/(ref\.wisprflow\.ai|go\.granola\.ai)\/np-g1\?utm_source=np&utm_medium=impactwait/.test(loc), `${red.status} ${loc}`);
+  }
   const tgt = await p.evaluate(() => { const a = document.getElementById("iw").shadowRoot.querySelector(".cta"); return [a.target, a.rel]; });
   check("plain: CTA opens in a new tab, marked sponsored", tgt[0] === "_blank" && /sponsored/.test(tgt[1]) && /noopener/.test(tgt[1]), tgt.join(" "));
   await p.evaluate(() => { document.getElementById("iw").active = false; });
@@ -159,7 +168,7 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   await p.waitForFunction(() => !document.getElementById("iw").hidden, null, { timeout: 8000 });
   await sleep(1500);
   const txt = await shadowText(p, "#iw");
-  check("demo: sponsored line shows while 'thinking'", /Wispr Flow|Granola/.test(txt), txt.replace(/\n/g, " | "));
+  check("demo: sponsored line shows while 'thinking'", LIVE ? /Sponsored/i.test(txt) : /Wispr Flow|Granola/.test(txt), txt.replace(/\n/g, " | "));
   const adBody = JSON.parse(log.find((l) => l.url.endsWith("/ad")).body);
   check("demo: uses site key 'demo' and the chip text as query", adBody.site === "demo" && /email/.test(adBody.query));
   await p.screenshot({ path: path.join(here, "shot-demo.png") });
@@ -177,8 +186,10 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   const api = await (await fetch(API + "/stats")).json();
   const shown = await p.evaluate(() => document.getElementById("waits").textContent.replace(/,/g, ""));
   check("counter: big number equals live API total", Number(shown) === api.total.sponsored_waits, `page ${shown} api ${api.total.sponsored_waits}`);
-  check("counter: ref banner + leaderboard include the site", (await p.textContent("#ref")).includes("iw-selftest") && (await p.textContent("#board")).includes("iw-selftest"));
-  check("counter: cause section is honest while no partner is set", /announcing soon/.test(await p.textContent("#cause")));
+  check("counter: ref banner names the site", (await p.textContent("#ref")).includes("iw-selftest"));
+  if (LIVE) check("counter: leaderboard includes the site", (await p.textContent("#board")).includes("iw-selftest"));
+  const cause = await p.textContent("#cause");
+  check("counter: cause section matches the API", api.impact.cause_name ? cause.includes(api.impact.cause_name) && /not affiliated/.test(cause) : /announcing soon/.test(cause), cause);
   await p.screenshot({ path: path.join(here, "shot-counter.png"), fullPage: true });
   await p.setViewportSize({ width: 360, height: 800 });
   check("counter: no horizontal scroll at 360px", (await p.evaluate(() => document.documentElement.scrollWidth)) <= 360);
