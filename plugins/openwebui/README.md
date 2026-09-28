@@ -1,6 +1,6 @@
 # ImpactWait for Open WebUI
 
-While the model is thinking, your users see one clearly labeled sponsored line. Part of the revenue funds a good cause, and every wait adds to a public live counter. It disappears the moment the reply is done and is never saved in chat history.
+While the model is thinking, your users see one clearly labeled sponsored line. Half of the net ad revenue is donated to Khan Academy, and every wait adds to a public live counter. It disappears the moment the reply is done and is never saved in chat history.
 
 Tested on Open WebUI 0.11.4.
 

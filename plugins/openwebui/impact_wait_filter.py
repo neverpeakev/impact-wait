@@ -4,7 +4,7 @@ author: Never Peak
 author_url: https://impact-wait.vercel.app
 version: 0.1.0
 license: MIT
-description: While the model is thinking, show one clearly labeled sponsored line. Part of the revenue funds a good cause, and every wait adds to a public live counter. No ad keys on your server, no cookies, no user IDs sent anywhere.
+description: While the model is thinking, show one clearly labeled sponsored line. Half of the net ad revenue is donated to Khan Academy, and every wait adds to a public live counter. No ad keys on your server, no cookies, no user IDs sent anywhere.
 """
 
 # How it works

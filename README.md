@@ -2,7 +2,7 @@
 
 **Every AI wait can do some good.**
 
-While an AI chat app is "thinking", ImpactWait shows one clearly labeled sponsored line under the pending reply. A share of the revenue goes to a good cause, and every wait adds to a public live counter at [impact-wait.vercel.app](https://impact-wait.vercel.app).
+While an AI chat app is "thinking", ImpactWait shows one clearly labeled sponsored line under the pending reply. Half of the net ad revenue is donated to Khan Academy, and every wait adds to a public live counter at [impact-wait.vercel.app](https://impact-wait.vercel.app).
 
 - One line. It shows only while the model is working and disappears when the reply is done.
 - It never touches the model's answer and is never saved in chat history.
@@ -60,7 +60,9 @@ Sensitive categories (gambling, adult, cannabis and vaping, weapons, payday loan
 
 ## Where the money goes
 
-Sponsored revenue funds a cause partner, and every donation is published on [the counter page](https://impact-wait.vercel.app) with its receipt. The first cause partner is being announced soon. Until then the counter shows $0 donated, because it only ever shows real money.
+50% of net ad revenue is donated to [Khan Academy](https://www.khanacademy.org), a 501(c)(3) nonprofit offering free education. Every donation is published on [the counter page](https://impact-wait.vercel.app) with its receipt, so the counter only ever shows real money.
+
+ImpactWait is an independent project by Never Peak and is not affiliated with or endorsed by Khan Academy.
 
 ## Repo layout
 
