@@ -1,5 +1,5 @@
 diff --git a/.env.example b/.env.example
-index 454f846..c08f771 100644
+index 454f846..4022b31 100644
 --- a/.env.example
 +++ b/.env.example
 @@ -1454,3 +1454,11 @@ OPENWEATHER_API_KEY=
@@ -13,7 +13,7 @@ index 454f846..c08f771 100644
 +# While a reply generates, show one labeled sponsored line; part of the revenue funds a cause.
 +# Only the user's latest message and the site key leave the browser. localhost is never counted.
 +# IMPACT_WAIT=off                # disable for everyone
-+# IMPACT_WAIT_SITE=lincoln-high   # leaderboard site key (default: derived from the hostname)
++# IMPACT_WAIT_SITE=riverside-library   # leaderboard site key (default: derived from the hostname)
 diff --git a/.prettierignore b/.prettierignore
 index fff14af..b8f4119 100644
 --- a/.prettierignore

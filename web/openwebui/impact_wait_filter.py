@@ -75,7 +75,7 @@ class Filter:
         priority: int = Field(default=0, description="Filter order (lower runs first).")
         site: str = Field(
             default="",
-            description="Your ImpactWait site key, e.g. lincoln-high or my-ai-club (2-41 chars: a-z, 0-9, dash). Shown on the public leaderboard. Required.",
+            description="Your ImpactWait site key, e.g. riverside-library or my-ai-club (2-41 chars: a-z, 0-9, dash). Shown on the public leaderboard. Required.",
         )
         endpoint: str = Field(default=DEFAULT_ENDPOINT, description="ImpactWait API. Leave as is.")
         theme: str = Field(default="auto", description="auto, light or dark.")

@@ -7,7 +7,7 @@ Tested on Open WebUI 0.11.4.
 ## Install (2 minutes)
 
 1. Admin Panel > Functions > **+** (Import) and paste [`impact_wait_filter.py`](impact_wait_filter.py).
-2. Open the function's **Valves** and set `site` to your key, e.g. `lincoln-high` (2-41 chars: a-z, 0-9, dash). It registers on first use and shows on the leaderboard.
+2. Open the function's **Valves** and set `site` to your key, e.g. `riverside-library` (2-41 chars: a-z, 0-9, dash). It registers on first use and shows on the leaderboard.
 3. Turn the function **on**, then either make it **Global** (three-dot menu) or attach it to specific models.
 
 That's it. No API keys on your server.
