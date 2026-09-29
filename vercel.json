@@ -1,0 +1,50 @@
+{
+  "outputDirectory": "web",
+  "buildCommand": "node scripts/build-embed.mjs",
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/impact-wait.js",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/javascript; charset=utf-8"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/openwebui/impact_wait_filter.py",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/x-python; charset=utf-8"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"impact_wait_filter.py\""
+        }
+      ]
+    },
+    {
+      "source": "/librechat.patch",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"librechat.patch\""
+        }
+      ]
+    }
+  ]
+}
