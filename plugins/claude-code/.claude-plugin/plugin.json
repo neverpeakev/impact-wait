@@ -1,0 +1,24 @@
+{
+  "name": "goodwait",
+  "version": "0.1.0",
+  "description": "Goodwait for Claude Code: one sponsored line above the prompt while Claude works; half of the net ad revenue goes to Khan Academy.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "site": {
+      "type": "string",
+      "description": "Your Goodwait site key (2-41 chars: a-z, 0-9, dash). Default 'claude-code' serves paid ads and counts every wait; 'sandbox' shows a house ad and counts nothing.",
+      "default": "claude-code",
+      "title": "Site key"
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "Goodwait API base URL.",
+      "default": "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait",
+      "title": "API endpoint"
+    }
+  },
+  "author": {
+    "name": "Never Peak Inc.",
+    "email": "kevin@neverpeakmarketing.com"
+  }
+}

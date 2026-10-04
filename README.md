@@ -17,6 +17,7 @@ While an AI chat app is "thinking", Goodwait shows one clearly labeled sponsored
 | **Open WebUI** | Admin Panel > Functions > Import [`plugins/openwebui/goodwait_filter.py`](plugins/openwebui/goodwait_filter.py), set the `site` valve, turn it on and make it Global. [Details](plugins/openwebui/README.md) |
 | **LibreChat** | Use [neverpeakev/goodwait-librechat](https://github.com/neverpeakev/goodwait-librechat) and set `GOODWAIT_SITE=your-site` in `.env`. |
 | **Vercel AI Chatbot** | One-click deploy [neverpeakev/goodwait-chatbot](https://github.com/neverpeakev/goodwait-chatbot), set `NEXT_PUBLIC_GOODWAIT_SITE`. |
+| **Claude Code** | `claude --plugin-dir plugins/claude-code` from this repo. [Details](plugins/claude-code/README.md) |
 | **Any web app** | The snippets below. |
 
 ### Plain HTML
@@ -69,6 +70,7 @@ Goodwait is an independent project by Never Peak and is not affiliated with or e
 - `web/` - the counter page, demo, and the `<good-wait>` web component (`web/goodwait.js` is the source of truth; `npm run build` regenerates the copies)
 - `supabase/functions/goodwait/` - the API (Supabase Edge Function, Deno)
 - `plugins/openwebui/` - the Open WebUI filter
+- `plugins/claude-code/` - the Claude Code mod (sponsored line above the prompt)
 - `react.js`, `react.d.ts`, `goodwait.js` - the npm package
 - `tests/` - API unit tests and real-browser end-to-end tests (plain HTML, React, Vercel chatbot, LibreChat, Open WebUI)
 
