@@ -1,5 +1,5 @@
 diff --git a/.env.example b/.env.example
-index 454f84603..4022b3188 100644
+index 454f84603..740e0bebe 100644
 --- a/.env.example
 +++ b/.env.example
 @@ -1454,3 +1454,11 @@ OPENWEATHER_API_KEY=
@@ -15,7 +15,7 @@ index 454f84603..4022b3188 100644
 +# GOODWAIT=off                # disable for everyone
 +# GOODWAIT_SITE=riverside-library   # leaderboard site key (default: derived from the hostname)
 diff --git a/.prettierignore b/.prettierignore
-index fff14af7a..b8f41193e 100644
+index fff14af7a..2fd4d9e39 100644
 --- a/.prettierignore
 +++ b/.prettierignore
 @@ -1,3 +1,6 @@
@@ -27,7 +27,7 @@ index fff14af7a..b8f41193e 100644
 +client/src/components/Chat/Messages/Goodwait/element.js
 diff --git a/NOTICE b/NOTICE
 new file mode 100644
-index 000000000..fd57b39a5
+index 000000000..3d15de0ef
 --- /dev/null
 +++ b/NOTICE
 @@ -0,0 +1,14 @@
@@ -46,7 +46,7 @@ index 000000000..fd57b39a5
 +- api/server/routes/config.js + packages/data-provider/src/config.ts: GOODWAIT / GOODWAIT_SITE in startup config.
 +- .env.example, .prettierignore, README.md, NOTICE.
 diff --git a/README.md b/README.md
-index 279604df7..dc8657fb4 100644
+index 279604df7..d9bb16b9a 100644
 --- a/README.md
 +++ b/README.md
 @@ -51,6 +51,23 @@
@@ -74,7 +74,7 @@ index 279604df7..dc8657fb4 100644
  
  - **Public Agents API docs:** Serve an OpenAPI specification and interactive Swagger UI for inference, events, Agent management, and Skill management.
 diff --git a/api/server/routes/config.js b/api/server/routes/config.js
-index d3e3682ab..9682a2de3 100644
+index d3e3682ab..bb9140fc9 100644
 --- a/api/server/routes/config.js
 +++ b/api/server/routes/config.js
 @@ -153,6 +153,10 @@ function buildPostLoginPayload() {
@@ -90,7 +90,7 @@ index d3e3682ab..9682a2de3 100644
    return payload;
 diff --git a/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx b/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx
 new file mode 100644
-index 000000000..67a8a656f
+index 000000000..66a241f25
 --- /dev/null
 +++ b/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx
 @@ -0,0 +1,76 @@
@@ -209,7 +209,7 @@ index 000000000..2f8abdfe7
 +});
 diff --git a/client/src/components/Chat/Messages/Goodwait/element.js b/client/src/components/Chat/Messages/Goodwait/element.js
 new file mode 100644
-index 000000000..9ac28db5f
+index 000000000..f09bc43de
 --- /dev/null
 +++ b/client/src/components/Chat/Messages/Goodwait/element.js
 @@ -0,0 +1,181 @@
@@ -396,7 +396,7 @@ index 000000000..9ac28db5f
 +})();
 diff --git a/client/src/components/Chat/Messages/Goodwait/index.ts b/client/src/components/Chat/Messages/Goodwait/index.ts
 new file mode 100644
-index 000000000..e55d9e709
+index 000000000..7aa221c1b
 --- /dev/null
 +++ b/client/src/components/Chat/Messages/Goodwait/index.ts
 @@ -0,0 +1,2 @@
@@ -404,7 +404,7 @@ index 000000000..e55d9e709
 +export { resolveSiteKey, siteKeyFromHost } from './site';
 diff --git a/client/src/components/Chat/Messages/Goodwait/site.ts b/client/src/components/Chat/Messages/Goodwait/site.ts
 new file mode 100644
-index 000000000..233f2d2f4
+index 000000000..7e92ef763
 --- /dev/null
 +++ b/client/src/components/Chat/Messages/Goodwait/site.ts
 @@ -0,0 +1,19 @@
@@ -428,7 +428,7 @@ index 000000000..233f2d2f4
 +  return SITE_KEY.test(site) ? site : siteKeyFromHost(host);
 +}
 diff --git a/client/src/components/Chat/Messages/MessagesView.tsx b/client/src/components/Chat/Messages/MessagesView.tsx
-index 1369a7479..aca474f52 100644
+index 1369a7479..d0f57102c 100644
 --- a/client/src/components/Chat/Messages/MessagesView.tsx
 +++ b/client/src/components/Chat/Messages/MessagesView.tsx
 @@ -15,6 +15,7 @@ import { fontSizeAtom } from '~/store/fontSize';
@@ -460,7 +460,7 @@ index 1369a7479..aca474f52 100644
                )}
                <div
 diff --git a/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx b/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
-index 8272fe91d..63b28c239 100644
+index 8272fe91d..0347ef43e 100644
 --- a/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
 +++ b/client/src/components/Nav/Settings/__tests__/Sidebar.spec.tsx
 @@ -21,6 +21,7 @@ const ctx: SettingsContextValue = {
@@ -472,7 +472,7 @@ index 8272fe91d..63b28c239 100644
  
  function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
 diff --git a/client/src/components/Nav/Settings/__tests__/registry.spec.ts b/client/src/components/Nav/Settings/__tests__/registry.spec.ts
-index d277ebfe4..dac650aa3 100644
+index d277ebfe4..57337cbbe 100644
 --- a/client/src/components/Nav/Settings/__tests__/registry.spec.ts
 +++ b/client/src/components/Nav/Settings/__tests__/registry.spec.ts
 @@ -23,6 +23,7 @@ const settingsContext: SettingsContextValue = {
@@ -484,7 +484,7 @@ index d277ebfe4..dac650aa3 100644
  
  describe('settings registry', () => {
 diff --git a/client/src/components/Nav/Settings/context.tsx b/client/src/components/Nav/Settings/context.tsx
-index bb725d3c7..314867d16 100644
+index bb725d3c7..b51f0279d 100644
 --- a/client/src/components/Nav/Settings/context.tsx
 +++ b/client/src/components/Nav/Settings/context.tsx
 @@ -30,6 +30,7 @@ export function useSettingsContext(): SettingsContextValue {
@@ -512,7 +512,7 @@ index bb725d3c7..314867d16 100644
    );
  }
 diff --git a/client/src/components/Nav/Settings/registry.tsx b/client/src/components/Nav/Settings/registry.tsx
-index ba831ccbd..537d29a3a 100644
+index ba831ccbd..3fdbde5ab 100644
 --- a/client/src/components/Nav/Settings/registry.tsx
 +++ b/client/src/components/Nav/Settings/registry.tsx
 @@ -44,6 +44,7 @@ import AdminPanel from '../SettingsTabs/General/AdminPanel';
@@ -545,7 +545,7 @@ index ba831ccbd..537d29a3a 100644
      id: 'smoothStreaming',
      tab: CHAT,
 diff --git a/client/src/components/Nav/Settings/types.ts b/client/src/components/Nav/Settings/types.ts
-index faf1c6b12..9ee834df0 100644
+index faf1c6b12..1e9947f06 100644
 --- a/client/src/components/Nav/Settings/types.ts
 +++ b/client/src/components/Nav/Settings/types.ts
 @@ -53,6 +53,7 @@ export interface SettingsContextValue {
@@ -557,7 +557,7 @@ index faf1c6b12..9ee834df0 100644
  
  export interface SettingEntry {
 diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
-index 47b7bfb1a..ae90e240c 100644
+index 47b7bfb1a..580db493e 100644
 --- a/client/src/locales/en/translation.json
 +++ b/client/src/locales/en/translation.json
 @@ -764,6 +764,7 @@
@@ -578,7 +578,7 @@ index 47b7bfb1a..ae90e240c 100644
    "com_nav_slash_command_description": "Toggle command \"/\" for selecting a prompt via keyboard",
 diff --git a/client/src/store/goodwait.ts b/client/src/store/goodwait.ts
 new file mode 100644
-index 000000000..0dff813e9
+index 000000000..1ed84526f
 --- /dev/null
 +++ b/client/src/store/goodwait.ts
 @@ -0,0 +1,4 @@
@@ -587,7 +587,7 @@ index 000000000..0dff813e9
 +/** Per-user opt-out for the Goodwait sponsored line; the operator switch is `GOODWAIT`. */
 +export const showGoodwaitAtom = createStorageAtom<boolean>('showGoodwait', true);
 diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
-index 21288b3dd..f9348daf3 100644
+index 21288b3dd..9cdf1f448 100644
 --- a/packages/data-provider/src/config.ts
 +++ b/packages/data-provider/src/config.ts
 @@ -2560,6 +2560,12 @@ export type TStartupConfig = {
