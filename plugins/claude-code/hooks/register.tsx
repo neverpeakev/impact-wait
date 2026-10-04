@@ -11,8 +11,10 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitImpact } from '../types'
 //
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
-// matching line. Nothing else. With site "sandbox" (the default) the API
-// serves a house ad and counts nothing.
+// matching line. Nothing else. The site key defaults to "claude-code" (the
+// manifest default; the code falls back to "sandbox" only when the option is
+// missing entirely). With site "sandbox" the API serves a house ad and counts
+// nothing.
 
 const DEFAULT_ENDPOINT = 'https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait'
 const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
