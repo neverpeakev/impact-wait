@@ -1,21 +1,21 @@
 {
-  "name": "impact-wait",
+  "name": "goodwait",
   "version": "0.1.0",
   "description": "Turn AI \"thinking...\" time into one sponsored line that funds a good cause. One tag, no ad keys in the browser.",
   "license": "MIT",
   "type": "module",
-  "homepage": "https://impact-wait.vercel.app",
-  "repository": { "type": "git", "url": "git+https://github.com/neverpeakev/impact-wait.git" },
-  "main": "./impact-wait.js",
+  "homepage": "https://goodwait.vercel.app",
+  "repository": { "type": "git", "url": "git+https://github.com/neverpeakev/goodwait.git" },
+  "main": "./goodwait.js",
   "exports": {
-    ".": "./impact-wait.js",
+    ".": "./goodwait.js",
     "./react": { "types": "./react.d.ts", "default": "./react.js" }
   },
-  "files": ["impact-wait.js", "react.js", "react.d.ts", "README.md", "LICENSE"],
+  "files": ["goodwait.js", "react.js", "react.d.ts", "README.md", "LICENSE"],
   "peerDependencies": { "react": ">=17" },
   "peerDependenciesMeta": { "react": { "optional": true } },
   "keywords": ["ai", "llm", "chatbot", "ads", "monetization", "charity", "web-component", "react", "open-webui", "librechat"],
-  "sideEffects": ["./impact-wait.js"],
+  "sideEffects": ["./goodwait.js"],
   "scripts": {
     "build": "node scripts/build-embed.mjs",
     "test:api": "deno test --allow-net=jsr.io --no-check tests/api_test.ts",

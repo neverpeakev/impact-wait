@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ImpactWait - every AI wait can do some good</title>
+<title>Goodwait - every AI wait can do some good</title>
 <meta name="description" content="A one-line add-on for AI apps: the 'thinking...' moment shows one sponsored line, and 50% of net ad revenue is donated to Khan Academy. Live public counter.">
-<meta property="og:title" content="ImpactWait - every AI wait can do some good">
-<meta property="og:description" content="Live counter of sponsored AI waits across every app using ImpactWait.">
+<meta property="og:title" content="Goodwait - every AI wait can do some good">
+<meta property="og:description" content="Live counter of sponsored AI waits across every app using Goodwait.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2312805c'/%3E%3Cpath d='M10 17l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root { --bg:#fbfaf7; --fg:#141414; --muted:#666; --line:#e6e3dc; --card:#fff; --good:#12805c; --code:#f3f1ec; }
@@ -57,14 +57,14 @@
 <body>
 <main>
   <div id="ref" class="ref" hidden></div>
-  <div class="kicker">ImpactWait</div>
+  <div class="kicker">Goodwait</div>
   <h1>Every AI wait can do some good.</h1>
   <p class="lede">While an AI app is "thinking", it shows one clearly labeled sponsored line. Half of the net ad revenue goes to Khan Academy's free education, and every wait adds to this public counter.</p>
 
   <section class="counter" aria-live="polite">
     <span class="live"><i></i>live</span>
     <div class="big" id="waits">-</div>
-    <div class="big-label">sponsored AI waits so far, across every app using ImpactWait</div>
+    <div class="big-label">sponsored AI waits so far, across every app using Goodwait</div>
     <div class="stats">
       <div class="stat"><b id="sites">-</b><span>apps contributing</span></div>
       <div class="stat"><b id="donated">-</b><span>donated so far (published with receipts)</span></div>
@@ -94,7 +94,7 @@
     </div>
     <div class="pane" data-pane="owui">
       <ol class="how">
-        <li><a href="/openwebui/impact_wait_filter.py" download>Download the filter</a> (one Python file).</li>
+        <li><a href="/openwebui/goodwait_filter.py" download>Download the filter</a> (one Python file).</li>
         <li>Admin Panel &gt; Functions &gt; <b>+</b> &gt; Import, and pick the file.</li>
         <li>Open its <b>Valves</b> and set <code>site</code> to your key.</li>
         <li>Turn it on and make it <b>Global</b> (three-dot menu).</li>
@@ -103,20 +103,20 @@
     </div>
     <div class="pane" data-pane="libre" hidden>
       <pre># fresh install: our LibreChat fork
-git clone https://github.com/neverpeakev/impact-librechat.git
-cd impact-librechat &amp;&amp; cp .env.example .env
-echo "IMPACT_WAIT_SITE=<span class="k">your-site</span>" &gt;&gt; .env
+git clone https://github.com/neverpeakev/goodwait-librechat.git
+cd goodwait-librechat &amp;&amp; cp .env.example .env
+echo "GOODWAIT_SITE=<span class="k">your-site</span>" &gt;&gt; .env
 docker compose up -d</pre>
-      <p class="small">Already running LibreChat? Apply <a href="/librechat.patch" download>the patch</a> (<code>git apply librechat.patch</code>) and rebuild. Users get a "Show Sponsored Line While Waiting" switch in Settings &gt; Chat. <code>IMPACT_WAIT=off</code> turns it off for everyone.</p>
+      <p class="small">Already running LibreChat? Apply <a href="/librechat.patch" download>the patch</a> (<code>git apply librechat.patch</code>) and rebuild. Users get a "Show Sponsored Line While Waiting" switch in Settings &gt; Chat. <code>GOODWAIT=off</code> turns it off for everyone.</p>
     </div>
     <div class="pane" data-pane="vercel" hidden>
-      <p style="margin:0 0 10px">The official Vercel AI Chatbot template with ImpactWait built in.</p>
-      <a class="cta" style="margin-top:0" href="https://github.com/neverpeakev/impact-chatbot#deploy-your-own">Deploy to Vercel</a>
-      <p class="small">Set <code>NEXT_PUBLIC_IMPACT_WAIT_SITE</code> to your key. Source: <a href="https://github.com/neverpeakev/impact-chatbot">neverpeakev/impact-chatbot</a>.</p>
+      <p style="margin:0 0 10px">The official Vercel AI Chatbot template with Goodwait built in.</p>
+      <a class="cta" style="margin-top:0" href="https://github.com/neverpeakev/goodwait-chatbot#deploy-your-own">Deploy to Vercel</a>
+      <p class="small">Set <code>NEXT_PUBLIC_GOODWAIT_SITE</code> to your key. Source: <a href="https://github.com/neverpeakev/goodwait-chatbot">neverpeakev/goodwait-chatbot</a>.</p>
     </div>
     <div class="pane" data-pane="html" hidden>
-      <pre>&lt;script src="https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait/embed.js" defer&gt;&lt;/script&gt;
-&lt;impact-wait id="iw" site="<span class="k">your-site</span>"&gt;&lt;/impact-wait&gt;
+      <pre>&lt;script src="https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait/embed.js" defer&gt;&lt;/script&gt;
+&lt;goodwait id="iw" site="<span class="k">your-site</span>"&gt;&lt;/goodwait&gt;
 &lt;script&gt;
   const iw = document.getElementById("iw");
   // when the user sends a message:
@@ -126,11 +126,11 @@ docker compose up -d</pre>
 &lt;/script&gt;</pre>
     </div>
     <div class="pane" data-pane="react" hidden>
-      <pre>npm i github:neverpeakev/impact-wait
+      <pre>npm i github:neverpeakev/goodwait
 
-import { ImpactWait } from "impact-wait/react";
+import { Goodwait } from "goodwait/react";
 
-&lt;ImpactWait site="<span class="k">your-site</span>" active={isLoading} query={lastUserMessage} /&gt;</pre>
+&lt;Goodwait site="<span class="k">your-site</span>" active={isLoading} query={lastUserMessage} /&gt;</pre>
     </div>
   </div>
   <a class="cta" href="/demo">Try the live demo</a>
@@ -138,15 +138,15 @@ import { ImpactWait } from "impact-wait/react";
   <h2>Run AI chat for a school or nonprofit?</h2>
   <div class="cause">
     <p style="margin:0 0 8px">We'll set it up with you for free, on a 20-minute call. You keep full control: one switch turns it off for everyone, and each user can turn it off for themselves.</p>
-    <a class="cta" style="margin-top:4px" href="mailto:kevin@neverpeakmarketing.com?subject=ImpactWait%20setup&amp;body=Our%20org%3A%0AWhat%20we%20run%20(Open%20WebUI%2C%20LibreChat%2C%20other)%3A%0AApprox.%20users%3A%0A">Get set up free</a>
+    <a class="cta" style="margin-top:4px" href="mailto:kevin@neverpeakmarketing.com?subject=Goodwait%20setup&amp;body=Our%20org%3A%0AWhat%20we%20run%20(Open%20WebUI%2C%20LibreChat%2C%20other)%3A%0AApprox.%20users%3A%0A">Get set up free</a>
   </div>
 
   <footer>
-    ImpactWait is an early project by Never Peak. Donations are published here with receipts as they're made. Questions or want to be a launch partner: <a href="mailto:kevin@neverpeakmarketing.com?subject=ImpactWait">kevin@neverpeakmarketing.com</a>
+    Goodwait is an early project by Never Peak. Donations are published here with receipts as they're made. Questions or want to be a launch partner: <a href="mailto:kevin@neverpeakmarketing.com?subject=Goodwait">kevin@neverpeakmarketing.com</a>
   </footer>
 </main>
 <script>
-  const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
+  const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => Number(n || 0).toLocaleString("en-US");
   const params = new URLSearchParams(location.search);
@@ -180,7 +180,7 @@ import { ImpactWait } from "impact-wait/react";
         p.textContent = `${i.pledge_pct ? Number(i.pledge_pct) + "% of net ad revenue" : "Sponsored revenue"} is donated to `;
         const a = document.createElement(i.cause_url ? "a" : "b"); a.textContent = i.cause_name; if (i.cause_url) { a.href = i.cause_url; a.target = "_blank"; a.rel = "noopener"; }
         p.append(a, document.createTextNode(". Every donation is published here with its receipt, so the numbers above are always real money, never estimates."));
-        const d = document.createElement("p"); d.className = "small"; d.textContent = `ImpactWait is an independent project by Never Peak and is not affiliated with or endorsed by ${i.cause_name}.`;
+        const d = document.createElement("p"); d.className = "small"; d.textContent = `Goodwait is an independent project by Never Peak and is not affiliated with or endorsed by ${i.cause_name}.`;
         c.append(p, d);
       } else {
         c.innerHTML = '<span class="empty">Cause partner announcing soon. Every donation will be published here with its receipt, so the numbers above are always real money, never estimates.</span>';

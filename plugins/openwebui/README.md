@@ -1,4 +1,4 @@
-# ImpactWait for Open WebUI
+# Goodwait for Open WebUI
 
 While the model is thinking, your users see one clearly labeled sponsored line. Half of the net ad revenue is donated to Khan Academy, and every wait adds to a public live counter. It disappears the moment the reply is done and is never saved in chat history.
 
@@ -6,7 +6,7 @@ Tested on Open WebUI 0.11.4.
 
 ## Install (2 minutes)
 
-1. Admin Panel > Functions > **+** (Import) and paste [`impact_wait_filter.py`](impact_wait_filter.py).
+1. Admin Panel > Functions > **+** (Import) and paste [`goodwait_filter.py`](goodwait_filter.py).
 2. Open the function's **Valves** and set `site` to your key, e.g. `riverside-library` (2-41 chars: a-z, 0-9, dash). It registers on first use and shows on the leaderboard.
 3. Turn the function **on**, then either make it **Global** (three-dot menu) or attach it to specific models.
 
@@ -14,18 +14,18 @@ That's it. No API keys on your server.
 
 ## How it works
 
-- **Before the model is called** the filter attaches a small sandboxed embed to the reply that's about to be generated. The embed runs the ImpactWait web component in the user's own browser.
-- **While the model thinks** the embed asks ImpactWait for one sponsored line that matches the user's latest message, and shows it.
+- **Before the model is called** the filter attaches a small sandboxed embed to the reply that's about to be generated. The embed runs the Goodwait web component in the user's own browser.
+- **While the model thinks** the embed asks Goodwait for one sponsored line that matches the user's latest message, and shows it.
 - **A view counts** only after the line has been at least 50% on screen, in a visible tab, for 1 full second.
 - **When the reply is done** the filter removes its embed (other tools' embeds on the same reply are left alone).
 - If a reply never finishes (tab closed mid-answer) and the chat is reopened later, the leftover embed stays inactive: no ad and no request.
 
 ## Privacy
 
-- Sent to ImpactWait: the user's latest message (to pick a relevant sponsor) and your site key. That's all.
+- Sent to Goodwait: the user's latest message (to pick a relevant sponsor) and your site key. That's all.
 - Not sent: user names, emails, IDs, chat history, or anything from your server. No cookies.
 - The embed runs sandboxed (no access to Open WebUI's page, cookies or storage).
-- Users can switch it off for themselves: Settings > Functions > ImpactWait > `show_sponsored_line`.
+- Users can switch it off for themselves: Settings > Functions > Goodwait > `show_sponsored_line`.
 
 ## Valves
 
@@ -34,7 +34,7 @@ That's it. No API keys on your server.
 | `site` | (empty) | Your site key. Nothing shows until it's set. |
 | `enabled` | `true` | Master switch for everyone. |
 | `theme` | `auto` | `auto`, `light` or `dark`. |
-| `endpoint` | ImpactWait API | Leave as is. |
+| `endpoint` | Goodwait API | Leave as is. |
 | `priority` | `0` | Filter order. |
 
 ## Tests

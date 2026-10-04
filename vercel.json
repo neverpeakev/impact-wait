@@ -4,7 +4,7 @@
   "cleanUrls": true,
   "headers": [
     {
-      "source": "/impact-wait.js",
+      "source": "/goodwait.js",
       "headers": [
         {
           "key": "Content-Type",
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "source": "/openwebui/impact_wait_filter.py",
+      "source": "/openwebui/goodwait_filter.py",
       "headers": [
         {
           "key": "Content-Type",
@@ -29,7 +29,7 @@
         },
         {
           "key": "Content-Disposition",
-          "value": "attachment; filename=\"impact_wait_filter.py\""
+          "value": "attachment; filename=\"goodwait_filter.py\""
         }
       ]
     },

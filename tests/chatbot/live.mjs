@@ -1,9 +1,9 @@
-// Real Chromium + real Vercel chatbot build (mock LLM) + LIVE ImpactWait API.
+// Real Chromium + real Vercel chatbot build (mock LLM) + LIVE Goodwait API.
 // On localhost the API runs in sandbox mode: house ad only, nothing counted, no site registered.
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE || "http://localhost:3100";
-const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
+const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log("PASS", name); } else { fail++; console.log("FAIL", name, extra); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -57,7 +57,7 @@ async function send(page, text) {
   const t0 = Date.now();
   await send(page, q);
   await page.getByTestId("message-assistant-loading").waitFor({ timeout: 5000 });
-  const iw = page.getByTestId("impact-wait");
+  const iw = page.getByTestId("good-wait");
   await iw.locator(".card.on").waitFor({ timeout: 6000 }).catch(() => {});
   const thinkingStill = await page.getByTestId("message-assistant-loading").isVisible();
   ok("ad visible while 'thinking' is still on screen", thinkingStill && (await iw.isVisible()), `thinking=${thinkingStill}`);
@@ -68,9 +68,9 @@ async function send(page, text) {
   const text = await iw.evaluate((el) => el.shadowRoot.textContent);
   ok("labeled Sponsored", /sponsored/i.test(text), text.slice(0, 120));
   ok("sandbox: API flags localhost as test mode", log.adResps[0]?.sandbox === true && log.adResps[0]?.ad?.provider === "house", JSON.stringify(log.adResps[0]));
-  ok("shows 'Test mode' note + Powered by ImpactWait", text.includes("Test mode on this host - views are not counted") && text.includes("Powered by ImpactWait"), text);
+  ok("shows 'Test mode' note + Powered by Goodwait", text.includes("Test mode on this host - views are not counted") && text.includes("Powered by Goodwait"), text);
   const hrefs = await iw.evaluate((el) => [...el.shadowRoot.querySelectorAll("a")].map((a) => a.href));
-  ok("ad links go through ImpactWait click redirect", hrefs.filter((h) => h.startsWith(`${API}/click?id=`)).length === 2, JSON.stringify(hrefs));
+  ok("ad links go through Goodwait click redirect", hrefs.filter((h) => h.startsWith(`${API}/click?id=`)).length === 2, JSON.stringify(hrefs));
   ok("self-promo link carries ?ref=localhost", hrefs.some((h) => h.endsWith("/?ref=localhost")), JSON.stringify(hrefs));
   const tok = JSON.stringify(log.adResps);
   ok("no network tokens in browser payload", !/idl_pk_|Bearer|api[_-]?key/i.test(tok));
@@ -78,11 +78,11 @@ async function send(page, text) {
   const ev = log.events[0];
   ok("impression reported once, >=1s after render; sandbox => not counted", log.events.length === 1 && ev.resp.counted === false && ev.resp.sandbox === true && ev.t - t0 >= 1000, JSON.stringify(log.events));
   // reply finished -> linger 4s -> hidden
-  await page.waitForFunction(() => document.querySelector("[data-testid='impact-wait']")?.hidden === true, null, { timeout: 9000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector("[data-testid='good-wait']")?.hidden === true, null, { timeout: 9000 }).catch(() => {});
   ok("hides after reply finishes (linger)", await iw.evaluate((el) => el.hidden));
   // 2nd message -> new ad with new query
   await send(page, "any tips for a first marathon");
-  await page.waitForFunction(() => document.querySelector("[data-testid='impact-wait']")?.hidden === false, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector("[data-testid='good-wait']")?.hidden === false, null, { timeout: 8000 }).catch(() => {});
   ok("second message gets a fresh ad", log.adReqs.length === 2 && log.adReqs[1].query === "any tips for a first marathon" && (await iw.isVisible()), JSON.stringify(log.adReqs.map((r) => r.query)));
   ok("no console errors", log.consoleErrors.filter((e) => !/favicon|404|Failed to load resource/i.test(e)).length === 0, JSON.stringify(log.consoleErrors));
   await page.screenshot({ path: "shot-light.png" });
@@ -97,8 +97,8 @@ async function send(page, text) {
   await send(page, "hello there");
   await sleep(1200);
   ok("fast reply: ad request still made", log.adReqs.length === 1);
-  await page.waitForFunction(() => document.querySelector("[data-testid='impact-wait']")?.hidden === true, null, { timeout: 12000 }).catch(() => {});
-  ok("fast reply: ad does not stay stuck on screen", await page.getByTestId("impact-wait").evaluate((el) => el.hidden));
+  await page.waitForFunction(() => document.querySelector("[data-testid='good-wait']")?.hidden === true, null, { timeout: 12000 }).catch(() => {});
+  ok("fast reply: ad does not stay stuck on screen", await page.getByTestId("good-wait").evaluate((el) => el.hidden));
   await ctx.close();
 }
 
@@ -108,7 +108,7 @@ async function send(page, text) {
   await page.goto("/");
   await page.waitForSelector("[data-testid='multimodal-input']");
   await send(page, "cheap laptop for college");
-  const iw = page.getByTestId("impact-wait");
+  const iw = page.getByTestId("good-wait");
   await iw.locator(".card.on").waitFor({ timeout: 7000 }).catch(() => {});
   ok("dark: theme attr follows app theme", (await iw.getAttribute("theme")) === "dark", await iw.getAttribute("theme"));
   const box = await iw.boundingBox();

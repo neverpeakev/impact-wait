@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-export interface ImpactWaitProps {
+export interface GoodwaitProps {
   /** Your app's key: 2-41 chars, a-z, 0-9, dash. New keys register automatically. */
   site: string;
   /** true while the model is generating. */
@@ -17,5 +17,5 @@ export interface ImpactWaitProps {
   onAd?: (d: { provider: string; id: string }) => void;
   onImpression?: (d: { provider: string; id: string }) => void;
 }
-export declare function ImpactWait(props: ImpactWaitProps): JSX.Element;
-export default ImpactWait;
+export declare function Goodwait(props: GoodwaitProps): JSX.Element;
+export default Goodwait;

@@ -1,10 +1,10 @@
-// ImpactWait API. Routes (all under /functions/v1/impact-wait):
+// Goodwait API. Routes (all under /functions/v1/goodwait):
 //   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact}
 //   POST /event   {id, type:"impression"}               -> {ok}
 //   GET  /click?id=...                                   -> 302 to the advertiser
 //   GET  /stats?site=...                                 -> public counter + leaderboard
 //   GET  /health                                         -> which networks are configured
-//   GET  /embed.js                                       -> the <impact-wait> web component
+//   GET  /embed.js                                       -> the <good-wait> web component
 import { EMBED_JS } from "./embed.ts";
 import { type Ad, type Attempt, confirmImpression, reportClick, runChain } from "./networks.ts";
 
@@ -60,7 +60,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
   return async function handle(req: Request): Promise<Response> {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
-    const route = url.pathname.replace(/^.*\/impact-wait/, "") || "/";
+    const route = url.pathname.replace(/^.*\/goodwait/, "") || "/";
     const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
     const ipHash = await sha(`${ip}|${new Date().toISOString().slice(0, 10)}|${salt}`);
     const origin = (req.headers.get("origin") || req.headers.get("referer") || "").slice(0, 200);

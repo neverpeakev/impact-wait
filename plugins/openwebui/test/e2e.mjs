@@ -1,10 +1,10 @@
-// Real Chromium + real Open WebUI (0.11.x) + mock OpenAI model (4s "thinking") + LIVE ImpactWait API.
+// Real Chromium + real Open WebUI (0.11.x) + mock OpenAI model (4s "thinking") + LIVE Goodwait API.
 // Prereqs: mock-openai.mjs on :9100, Open WebUI on :8080 (WEBUI_AUTH=False), filter installed via install.mjs (site iw-selftest).
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 
 const B = "http://127.0.0.1:8080";
-const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
+const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { if (c) { pass++; console.log("PASS", n); } else { fail++; console.log("FAIL", n, x); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,8 +31,8 @@ async function newPage() {
   return { ctx, page, log };
 }
 async function send(page, text) { await page.locator("#chat-input").click(); await page.keyboard.type(text); await page.keyboard.press("Enter"); }
-const ourFrames = (page) => page.evaluate(() => [...document.querySelectorAll("iframe")].filter((f) => (f.getAttribute("srcdoc") || "").includes("data-impact-wait-embed")).map((f) => ({ h: f.getBoundingClientRect().height, sandbox: f.getAttribute("sandbox") })));
-const cardIn = async (page) => { for (const f of page.frames()) { const t = await f.evaluate(() => { const el = document.querySelector("impact-wait"); return el && !el.hidden ? el.shadowRoot.textContent : null; }).catch(() => null); if (t) return { frame: f, text: t }; } return null; };
+const ourFrames = (page) => page.evaluate(() => [...document.querySelectorAll("iframe")].filter((f) => (f.getAttribute("srcdoc") || "").includes("data-good-wait-embed")).map((f) => ({ h: f.getBoundingClientRect().height, sandbox: f.getAttribute("sandbox") })));
+const cardIn = async (page) => { for (const f of page.frames()) { const t = await f.evaluate(() => { const el = document.querySelector("good-wait"); return el && !el.hidden ? el.shadowRoot.textContent : null; }).catch(() => null); if (t) return { frame: f, text: t }; } return null; };
 
 // 1. Main flow
 {
@@ -50,7 +50,7 @@ const cardIn = async (page) => { for (const f of page.frames()) { const t = awai
   ok("embed is sandboxed without same-origin", fr.length === 1 && !/allow-same-origin/.test(fr[0].sandbox || ""), JSON.stringify(fr));
   ok("embed auto-sizes to the card (no big blank gap)", fr.length === 1 && fr[0].h > 30 && fr[0].h < 90, JSON.stringify(fr));
   if (card) {
-    const links = await card.frame.evaluate(() => [...document.querySelector("impact-wait").shadowRoot.querySelectorAll("a")].map((a) => ({ href: a.href, target: a.target })));
+    const links = await card.frame.evaluate(() => [...document.querySelector("good-wait").shadowRoot.querySelectorAll("a")].map((a) => ({ href: a.href, target: a.target })));
     ok("ad links go through the click redirect and open in a new tab", links.filter((l) => l.href.startsWith(`${API}/click?id=`) && l.target === "_blank").length === 2, JSON.stringify(links));
     ok("no network tokens in the browser", !/idl_pk_|Bearer|impressionToken|exposure/i.test(JSON.stringify(log.adResp)));
   }
@@ -64,7 +64,7 @@ const cardIn = async (page) => { for (const f of page.frames()) { const t = awai
   const chat = chatId ? await api(`/chats/${chatId}`) : null;
   const msgs = chat ? Object.values(chat.chat?.history?.messages || {}) : [];
   const stored = JSON.stringify(msgs.map((m) => m.embeds || []));
-  ok("nothing sponsored is saved in the chat history", !!chatId && msgs.length >= 2 && !stored.includes("impact-wait"), stored.slice(0, 200));
+  ok("nothing sponsored is saved in the chat history", !!chatId && msgs.length >= 2 && !stored.includes("good-wait"), stored.slice(0, 200));
   ok("model never saw the ad (reply content untouched)", msgs.some((m) => m.role === "assistant" && m.content.trim() === `Mock answer to: ${q}`));
   // reopen the chat: no ad, no request
   const before = log.ad.length;
@@ -87,20 +87,20 @@ const cardIn = async (page) => { for (const f of page.frames()) { const t = awai
   await page.getByText("Mock answer to:").waitFor({ timeout: 15000 });
   await sleep(2500);
   const frames = await page.evaluate(() => [...document.querySelectorAll("iframe")].map((f) => f.getAttribute("srcdoc") || ""));
-  ok("another tool's embed survives; only ours is removed", frames.some((s) => s.includes("OTHER-EMBED-KEEP")) && !frames.some((s) => s.includes("data-impact-wait-embed")), JSON.stringify(frames.map((s) => s.slice(0, 60))));
+  ok("another tool's embed survives; only ours is removed", frames.some((s) => s.includes("OTHER-EMBED-KEEP")) && !frames.some((s) => s.includes("data-good-wait-embed")), JSON.stringify(frames.map((s) => s.slice(0, 60))));
   await fetch(`${B}/api/v1/functions/id/zz_other_embed/delete`, { method: "DELETE", headers: H });
   await ctx.close();
 }
 
 // 3. A user who turns it off sees nothing.
 {
-  await api("/functions/id/impact_wait/valves/user/update", { show_sponsored_line: false });
+  await api("/functions/id/goodwait/valves/user/update", { show_sponsored_line: false });
   const { ctx, page, log } = await newPage();
   await send(page, "user opted out check");
   await sleep(2500);
   ok("user valve off: no embed, no ad request", (await ourFrames(page)).length === 0 && log.ad.length === 0);
   await page.getByText("Mock answer to:").waitFor({ timeout: 15000 });
-  await api("/functions/id/impact_wait/valves/user/update", { show_sponsored_line: true });
+  await api("/functions/id/goodwait/valves/user/update", { show_sponsored_line: true });
   await ctx.close();
 }
 
@@ -109,7 +109,7 @@ const cardIn = async (page) => { for (const f of page.frames()) { const t = awai
   const { execFileSync } = await import("node:child_process");
   const html = execFileSync("python3", ["-c", `
 import importlib.util as u
-s=u.spec_from_file_location('f','../impact_wait_filter.py');m=u.module_from_spec(s);s.loader.exec_module(m)
+s=u.spec_from_file_location('f','../goodwait_filter.py');m=u.module_from_spec(s);s.loader.exec_module(m)
 import time
 print(m.embed_html('iw-selftest','stale test',m.DEFAULT_ENDPOINT,'auto',now=time.time()-3600))`], { cwd: new URL(".", import.meta.url).pathname }).toString();
   const ctx = await browser.newContext(); const page = await ctx.newPage(); let reqs = 0;

@@ -1,4 +1,4 @@
-// Ad networks for ImpactWait. Ported from the Wait Ads extension (v1.3.3),
+// Ad networks for Goodwait. Ported from the Wait Ads extension (v1.3.3),
 // where each request shape was verified live against the real APIs.
 // Keys come from Edge Function secrets; a network with no key is skipped.
 
@@ -82,9 +82,9 @@ async function admesh(ctx: Ctx, key: string, f: typeof fetch): Promise<Ad | null
   if (ctx.response) messages.push({ role: "assistant", content: ctx.response.slice(0, 1500) });
   const body = {
     spec_version: "1.0", message_id: `msg_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, timestamp: new Date().toISOString(),
-    platform: { platform_id: "placeholder", role: "platform", software: { name: "impact_wait", version: "0.1.0" } },
+    platform: { platform_id: "placeholder", role: "platform", software: { name: "goodwait", version: "0.1.0" } },
     identity: { namespace: "platform_user", value_hash: "", confidence: 0 },
-    consent: { status: "granted", source: "impact_wait", scope: { intent_based_monetization: true, agent_participation: false, measurement: true }, constraints: { allow_identity_downstream: false } },
+    consent: { status: "granted", source: "goodwait", scope: { intent_based_monetization: true, agent_participation: false, measurement: true }, constraints: { allow_identity_downstream: false } },
     classification_input: { type: "interaction", interaction: {
       session: { id: ctx.sessionId, turn_index: 0 },
       surface: { channel: "conversation", interaction_mode: "text", platform: "web", form_factor: "desktop", locale: "en-US", country: "US", publisher: "placeholder" },
@@ -110,7 +110,7 @@ async function admesh(ctx: Ctx, key: string, f: typeof fetch): Promise<Ad | null
 
 // ------------------------------------------------------------- AgentAds
 const AGENTADS = "https://api.tryagentads.com";
-const AA_HDR = "impact-wait/0.1.0 (agentads-sdk-0.5.0-compatible)";
+const AA_HDR = "goodwait/0.1.0 (agentads-sdk-0.5.0-compatible)";
 async function agentads(ctx: Ctx, key: string, f: typeof fetch): Promise<Ad | null> {
   const response = ctx.response || ctx.query;
   const r = await timed(`${AGENTADS}/v1/bid`, {
@@ -131,10 +131,10 @@ async function agentads(ctx: Ctx, key: string, f: typeof fetch): Promise<Ad | nu
 }
 
 // ---------------------------------------------------------------- House
-// Kevin's Dub partner links; utm_medium=impactwait keeps this traffic separate in Dub.
+// Kevin's Dub partner links; utm_medium=goodwait keeps this traffic separate in Dub.
 export const HOUSE = [
-  { id: "wispr", brand: "Wispr Flow", headline: "Talk instead of type", body: "Voice dictation that works in every app.", cta: "Try free", url: "https://ref.wisprflow.ai/np-g1?utm_source=np&utm_medium=impactwait&utm_campaign=impactwait-wf", keywords: "write|writing|email|draft|essay|blog|post|copy|type|typing|dictat|voice|speech|slack|message|reply|letter|code|coding|prompt" },
-  { id: "granola", brand: "Granola", headline: "AI meeting notes, no bot", body: "Notes from every call without a bot joining. First month free.", cta: "Try free", url: "https://go.granola.ai/np-g1?utm_source=np&utm_medium=impactwait&utm_campaign=impactwait-gr", keywords: "meeting|call|zoom|notes|note-taking|transcri|summar|agenda|standup|interview|client|sales call|1:1|one-on-one|minutes" },
+  { id: "wispr", brand: "Wispr Flow", headline: "Talk instead of type", body: "Voice dictation that works in every app.", cta: "Try free", url: "https://ref.wisprflow.ai/np-g1?utm_source=np&utm_medium=goodwait&utm_campaign=goodwait-wf", keywords: "write|writing|email|draft|essay|blog|post|copy|type|typing|dictat|voice|speech|slack|message|reply|letter|code|coding|prompt" },
+  { id: "granola", brand: "Granola", headline: "AI meeting notes, no bot", body: "Notes from every call without a bot joining. First month free.", cta: "Try free", url: "https://go.granola.ai/np-g1?utm_source=np&utm_medium=goodwait&utm_campaign=goodwait-gr", keywords: "meeting|call|zoom|notes|note-taking|transcri|summar|agenda|standup|interview|client|sales call|1:1|one-on-one|minutes" },
 ];
 export function house(ctx: Ctx): Ad {
   const text = `${ctx.query} ${ctx.response || ""}`.toLowerCase();

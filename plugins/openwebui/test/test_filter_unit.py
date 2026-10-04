@@ -1,5 +1,5 @@
 import asyncio, importlib.util, pathlib, time
-spec = importlib.util.spec_from_file_location("f", pathlib.Path(__file__).parent.parent / "impact_wait_filter.py")
+spec = importlib.util.spec_from_file_location("f", pathlib.Path(__file__).parent.parent / "goodwait_filter.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 def test_last_user_text():

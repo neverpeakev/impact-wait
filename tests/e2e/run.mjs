@@ -1,4 +1,4 @@
-// Real-browser tests for ImpactWait against the LIVE deployed API.
+// Real-browser tests for Goodwait against the LIVE deployed API.
 // Uses site key "iw-selftest"; rows are cleaned up afterwards.
 import http from "node:http";
 import fs from "node:fs";
@@ -6,8 +6,8 @@ import path from "node:path";
 import { chromium } from "playwright";
 const here = path.dirname(new URL(import.meta.url).pathname);
 const WEB = path.join(here, "../../web");
-const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
-const routes = { "/": "index.html", "/demo": "demo.html", "/impact-wait.js": "impact-wait.js" };
+const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
+const routes = { "/": "index.html", "/demo": "demo.html", "/goodwait.js": "goodwait.js" };
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   let file = routes[u.pathname] ? path.join(WEB, routes[u.pathname]) : null;
@@ -42,15 +42,15 @@ function watch(page) {
   page.on("response", async (r) => { if (r.url().startsWith(API)) { const e = log.find((l) => l.url === r.url() && !l.status); if (e) { e.status = r.status(); try { e.json = await r.json(); } catch {} } } });
   return log;
 }
-const shadowText = (page, sel = "impact-wait") => page.evaluate((s) => { const el = document.querySelector(s); return el && !el.hidden ? el.shadowRoot.querySelector(".card").innerText : ""; }, sel);
+const shadowText = (page, sel = "good-wait") => page.evaluate((s) => { const el = document.querySelector(s); return el && !el.hidden ? el.shadowRoot.querySelector(".card").innerText : ""; }, sel);
 
 // ---- created by script after the element is defined (React/Vue path: document.createElement)
 {
-  fs.writeFileSync(path.join(here, "made.html"), `<!doctype html><body><script src="/impact-wait.js"></script></body>`);
+  fs.writeFileSync(path.join(here, "made.html"), `<!doctype html><body><script src="/goodwait.js"></script></body>`);
   const p = await ctx.newPage(); const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
   await p.goto(BASE + "/made.html");
-  await p.waitForFunction(() => !!customElements.get("impact-wait"));
-  const res = await p.evaluate(() => { try { const el = document.createElement("impact-wait"); el.setAttribute("site", "iw-selftest"); el.id = "made"; document.body.prepend(el); el.query = "draft a blog post"; el.active = true; return "ok:" + el.hidden; } catch (e) { return "threw:" + e.message; } });
+  await p.waitForFunction(() => !!customElements.get("good-wait"));
+  const res = await p.evaluate(() => { try { const el = document.createElement("good-wait"); el.setAttribute("site", "iw-selftest"); el.id = "made"; document.body.prepend(el); el.query = "draft a blog post"; el.active = true; return "ok:" + el.hidden; } catch (e) { return "threw:" + e.message; } });
   check("createElement after define: no throw, starts hidden", res === "ok:true", res);
   await p.waitForFunction(() => !document.getElementById("made").hidden, null, { timeout: 8000 }).catch(() => {});
   check("createElement after define: renders an ad", !(await p.evaluate(() => document.getElementById("made").hidden)) && errs.length === 0, JSON.stringify(errs));
@@ -59,19 +59,19 @@ const shadowText = (page, sel = "impact-wait") => page.evaluate((s) => { const e
 
 // ---- plain HTML embed
 fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="margin:0">
-<div id="top" style="padding:20px"><impact-wait id="iw" site="iw-selftest" linger="1200"></impact-wait></div>
+<div id="top" style="padding:20px"><good-wait id="iw" site="iw-selftest" linger="1200"></good-wait></div>
 <div style="height:3000px"></div>
-<div style="padding:20px"><impact-wait id="low" site="iw-selftest" linger="1200"></impact-wait></div>
-<script src="/impact-wait.js"></script></body>`);
+<div style="padding:20px"><good-wait id="low" site="iw-selftest" linger="1200"></good-wait></div>
+<script src="/goodwait.js"></script></body>`);
 {
   const p = await ctx.newPage(); const log = watch(p);
   await p.goto(BASE + "/plain.html");
   await p.evaluate(() => { const iw = document.getElementById("iw"); iw.query = "help me write an email to my team"; iw.active = true; });
   await p.waitForFunction(() => !document.getElementById("iw").hidden, null, { timeout: 8000 });
   const txt = await shadowText(p, "#iw");
-  check("plain: sponsored line renders with label, ad and impact footer", !/Â|â/.test(txt) && /SPONSORED|Sponsored/i.test(txt) && (LIVE ? /revenue goes to|sponsored waits? so far/.test(txt) : /Wispr Flow|Granola/.test(txt) && /Test mode on this host/.test(txt)) && /Powered by ImpactWait/.test(txt), JSON.stringify(txt));
+  check("plain: sponsored line renders with label, ad and impact footer", !/Â|â/.test(txt) && /SPONSORED|Sponsored/i.test(txt) && (LIVE ? /revenue goes to|sponsored waits? so far/.test(txt) : /Wispr Flow|Granola/.test(txt) && /Test mode on this host/.test(txt)) && /Powered by Goodwait/.test(txt), JSON.stringify(txt));
   const home = await p.evaluate(() => document.getElementById("iw").shadowRoot.querySelector(".impact a").href);
-  check("plain: 'Powered by' links to the counter with ?ref=site", home === "https://impact-wait.vercel.app/?ref=iw-selftest", home);
+  check("plain: 'Powered by' links to the counter with ?ref=site", home === "https://goodwait.vercel.app/?ref=iw-selftest", home);
   const adReq = log.find((l) => l.url.endsWith("/ad"));
   check("plain: one /ad request with site + query, HTTP 200", log.filter((l) => l.url.endsWith("/ad")).length === 1 && adReq.status === 200 && JSON.parse(adReq.body).query.includes("email"), JSON.stringify(adReq && { status: adReq.status, body: adReq.body }));
   check("plain: no tracking tokens reach the browser", adReq.json && !JSON.stringify(adReq.json).includes("tracking") && /\/click\?id=/.test(adReq.json.ad.clickUrl), adReq.json && adReq.json.ad.clickUrl);
@@ -84,11 +84,11 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   // Follow the server redirect by hand (never actually visiting the advertiser, so no real Dub clicks).
   if (LIVE) {
     // Never request /click on a paid ad: it would register a real click with the network.
-    check("plain: CTA goes through the server click redirect (not followed on paid ads)", /\/impact-wait\/click\?id=/.test(ctaHref), ctaHref);
+    check("plain: CTA goes through the server click redirect (not followed on paid ads)", /\/goodwait\/click\?id=/.test(ctaHref), ctaHref);
   } else {
     const red = await fetch(ctaHref, { redirect: "manual" });
     const loc = red.headers.get("location") || "";
-    check("plain: CTA goes through the server click redirect to the advertiser", /\/impact-wait\/click\?id=/.test(ctaHref) && red.status === 302 && /^https:\/\/(ref\.wisprflow\.ai|go\.granola\.ai)\/np-g1\?utm_source=np&utm_medium=impactwait/.test(loc), `${red.status} ${loc}`);
+    check("plain: CTA goes through the server click redirect to the advertiser", /\/goodwait\/click\?id=/.test(ctaHref) && red.status === 302 && /^https:\/\/(ref\.wisprflow\.ai|go\.granola\.ai)\/np-g1\?utm_source=np&utm_medium=goodwait/.test(loc), `${red.status} ${loc}`);
   }
   const tgt = await p.evaluate(() => { const a = document.getElementById("iw").shadowRoot.querySelector(".cta"); return [a.target, a.rel]; });
   check("plain: CTA opens in a new tab, marked sponsored", tgt[0] === "_blank" && /sponsored/.test(tgt[1]) && /noopener/.test(tgt[1]), tgt.join(" "));
@@ -155,7 +155,7 @@ fs.writeFileSync(path.join(here, "plain.html"), `<!doctype html><body style="mar
   check("react: exactly one /ad request per activation", log.filter((l) => l.url.endsWith("/ad")).length === 1, String(log.filter((l) => l.url.endsWith("/ad")).length));
   await p.evaluate(() => window.__stop());
   await sleep(1900);
-  check("react: hides after active=false + linger", await p.evaluate(() => document.querySelector("impact-wait").hidden));
+  check("react: hides after active=false + linger", await p.evaluate(() => document.querySelector("good-wait").hidden));
   check("react: no page errors", errs.length === 0, errs.join(" | "));
   await p.close();
 }

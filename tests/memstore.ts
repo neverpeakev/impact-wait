@@ -1,4 +1,4 @@
-import type { AdRow, Impact, Store } from "../supabase/functions/impact-wait/app.ts";
+import type { AdRow, Impact, Store } from "../supabase/functions/goodwait/app.ts";
 
 export function memStore(impact: Partial<Impact> = {}): Store & { ads: Map<string, AdRow & { ip_hash: string }>; totals: Map<string, any>; sites: Map<string, any>; age(id: string, ms: number): void } {
   const sites = new Map<string, any>();

@@ -1,11 +1,11 @@
 // Real Chromium + real LibreChat (production build, MongoDB) + mock OpenAI-compatible model
-// that "thinks" 4s (port 9200) + LIVE ImpactWait API.
+// that "thinks" 4s (port 9200) + LIVE Goodwait API.
 // localhost is sandboxed by the API (house ad, never counted). One counted-path check runs on a
 // non-dev hostname (iw-libre.example -> 127.0.0.1); its site key is printed so the rows can be cleaned.
 import { execSync, spawn } from "node:child_process";
 import { chromium } from "playwright";
 
-const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
+const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
 const USER = { email: "qa@example.com", password: "Test-pass-12345" };
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { if (c) { pass++; console.log("PASS", n); } else { fail++; console.log("FAIL", n, x); } };
@@ -23,7 +23,7 @@ async function startServer(env = {}) {
 const browser = await chromium.launch({ args: ["--host-resolver-rules=MAP iw-libre.example 127.0.0.1"] });
 async function session({ base = "http://localhost:3080", viewport = { width: 1280, height: 860 }, dark = false, optOut = false, fakeAd = false } = {}) {
   const ctx = await browser.newContext({ viewport, colorScheme: dark ? "dark" : "light" });
-  if (dark || optOut) await ctx.addInitScript(([d, o]) => { if (d) localStorage.setItem("color-theme", "dark"); if (o) localStorage.setItem("showImpactWait", "false"); }, [dark, optOut]);
+  if (dark || optOut) await ctx.addInitScript(([d, o]) => { if (d) localStorage.setItem("color-theme", "dark"); if (o) localStorage.setItem("showGoodwait", "false"); }, [dark, optOut]);
   const page = await ctx.newPage();
   const log = { ad: [], adResp: [], ev: [], errors: [] };
   page.on("pageerror", (e) => log.errors.push(String(e)));
@@ -44,7 +44,7 @@ async function session({ base = "http://localhost:3080", viewport = { width: 128
   return { ctx, page, log };
 }
 async function send(page, text) { const ta = page.locator("textarea").first(); await ta.click(); await ta.fill(text); await page.keyboard.press("Enter"); }
-const iwState = (page) => page.evaluate(() => { const e = document.querySelector("impact-wait"); return e ? { hidden: e.hidden, site: e.getAttribute("site"), theme: e.getAttribute("theme"), text: e.shadowRoot.textContent, links: [...e.shadowRoot.querySelectorAll("a")].map((a) => ({ href: a.href, target: a.target })) } : null; });
+const iwState = (page) => page.evaluate(() => { const e = document.querySelector("good-wait"); return e ? { hidden: e.hidden, site: e.getAttribute("site"), theme: e.getAttribute("theme"), text: e.shadowRoot.textContent, links: [...e.shadowRoot.querySelectorAll("a")].map((a) => ({ href: a.href, target: a.target })) } : null; });
 const replyDone = (page, q) => page.getByText(`Mock answer to: ${q}`).first().waitFor({ timeout: 20000 });
 
 // 1. Default config on localhost (sandbox)
@@ -107,7 +107,7 @@ await startServer();
   const { ctx, page } = await session({ dark: true, viewport: { width: 390, height: 780 } });
   const q = "cheap laptop for college"; await send(page, q);
   let st = null; for (let i = 0; i < 40; i++) { await sleep(100); st = await iwState(page); if (st && !st.hidden && st.text) break; }
-  const box = await page.locator("impact-wait").boundingBox();
+  const box = await page.locator("good-wait").boundingBox();
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   ok("dark: theme attribute follows LibreChat theme", st?.theme === "dark", st?.theme);
   ok("390px: fits, no horizontal scroll", box && box.x >= 0 && box.x + box.width <= 390 && over <= 0, JSON.stringify({ box, over }));
@@ -115,20 +115,20 @@ await startServer();
   await replyDone(page, q);
   await ctx.close();
 }
-// 4. IMPACT_WAIT_SITE is used when set (API faked, nothing hits the live counter)
-await startServer({ IMPACT_WAIT_SITE: "Lincoln-High" });
+// 4. GOODWAIT_SITE is used when set (API faked, nothing hits the live counter)
+await startServer({ GOODWAIT_SITE: "Lincoln-High" });
 {
   const { ctx, page, log } = await session({ fakeAd: true });
   const q = "site key check"; await send(page, q); await replyDone(page, q);
-  ok("IMPACT_WAIT_SITE sets the site key", log.ad.length === 1 && log.ad[0].body.site === "lincoln-high", JSON.stringify(log.ad));
+  ok("GOODWAIT_SITE sets the site key", log.ad.length === 1 && log.ad[0].body.site === "lincoln-high", JSON.stringify(log.ad));
   await ctx.close();
 }
-// 5. IMPACT_WAIT=off disables it for everyone
-await startServer({ IMPACT_WAIT: "off" });
+// 5. GOODWAIT=off disables it for everyone
+await startServer({ GOODWAIT: "off" });
 {
   const { ctx, page, log } = await session();
   const q = "operator off check"; await send(page, q); await replyDone(page, q);
-  ok("IMPACT_WAIT=off: nothing rendered, no ad request", log.ad.length === 0 && !(await iwState(page)));
+  ok("GOODWAIT=off: nothing rendered, no ad request", log.ad.length === 0 && !(await iwState(page)));
   await ctx.close();
 }
 // 6. Counted path on a real (non-dev) hostname

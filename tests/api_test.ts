@@ -1,8 +1,8 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { createApp } from "../supabase/functions/impact-wait/app.ts";
+import { createApp } from "../supabase/functions/goodwait/app.ts";
 import { memStore } from "./memstore.ts";
 
-const BASE = "https://x.supabase.co/functions/v1/impact-wait";
+const BASE = "https://x.supabase.co/functions/v1/goodwait";
 const ok = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
 
 // Fetch stub: records every outbound call; networks respond per `fill`.
@@ -145,7 +145,7 @@ Deno.test("new site keys auto-register and appear on the leaderboard", async () 
 });
 
 Deno.test("impact: units funded come only from recorded donations", async () => {
-  const { impactSummary } = await import("../supabase/functions/impact-wait/app.ts");
+  const { impactSummary } = await import("../supabase/functions/goodwait/app.ts");
   const none = impactSummary({ cause_name: null, cause_url: null, unit_label: null, usd_per_unit: null, pledge_pct: null, donated_usd: 0, donated_updated_at: null }, 500);
   assertEquals(none.units_funded, null);
   const some = impactSummary({ cause_name: "Meals", cause_url: "https://x.org", unit_label: "meals", usd_per_unit: 0.1, pledge_pct: 50, donated_usd: 12.35, donated_updated_at: null }, 500);
@@ -193,7 +193,7 @@ Deno.test("sandbox: localhost origin gets a house ad, no paid network calls, not
 });
 
 Deno.test("sandbox: site key 'localhost' and dev hosts (127.0.0.1, *.local) are sandboxed; real domains are not", async () => {
-  const { isDevOrigin } = await import("../supabase/functions/impact-wait/app.ts");
+  const { isDevOrigin } = await import("../supabase/functions/goodwait/app.ts");
   assert(isDevOrigin("", "localhost"));
   assert(isDevOrigin("http://127.0.0.1:5173", "x1"));
   assert(isDevOrigin("http://mybox.local:3000/chat", "x1"));
@@ -211,11 +211,11 @@ Deno.test("embed.js: serves the web component as JavaScript", async () => {
   const r = await t.call("/embed.js", { method: "GET" });
   assertEquals(r.status, 200);
   assert(r.headers.get("content-type")!.startsWith("application/javascript"));
-  assert((await r.text()).includes('customElements.define("impact-wait"'));
+  assert((await r.text()).includes('customElements.define("good-wait"'));
 });
 
 Deno.test("brand safety: every paying ad shows (even thin creatives); only sensitive categories are blocked", async () => {
-  const { safetyReason } = await import("../supabase/functions/impact-wait/networks.ts");
+  const { safetyReason } = await import("../supabase/functions/goodwait/networks.ts");
   const base = { provider: "idlen", live: true, label: "Sponsored", brand: "Neon", headline: "Serverless Postgres", body: "Scale to zero", cta: "Try", clickUrl: "https://neon.tech/?x=1", tracking: {} };
   assertEquals(safetyReason(base), null);
   assertEquals(safetyReason({ ...base, brand: "STUDENT", headline: "Just launched \u2014 built for developers", body: "See what's new and try it where you already work.", clickUrl: "https://www.linkedin.com/x" }), null);
@@ -232,7 +232,7 @@ Deno.test("brand safety: a sensitive Idlen fill loses to AdMesh, and alone falls
   const base = t.s.f;
   let title = "Best online casino bonus";
   const f: typeof fetch = async (input, init) => String(input).endsWith("/v1/serve") ? new Response(JSON.stringify(idlenAd(title)), { headers: { "Content-Type": "application/json" } }) : base(input, init);
-  const { createApp } = await import("../supabase/functions/impact-wait/app.ts");
+  const { createApp } = await import("../supabase/functions/goodwait/app.ts");
   const ask = (keys: Record<string, string>, ip: string) => createApp({ store: t.store, keys, baseUrl: BASE, salt: "t", fetch: f })(new Request(BASE + "/ad", { method: "POST", headers: { "content-type": "application/json", origin: "https://chat.acme.dev", "x-forwarded-for": ip }, body: JSON.stringify({ site: "demo", query: "crm for startups", debug: true }) }));
   const j1 = await (await ask({ idlen: "idl_pk_x", admesh: "sk_x" }, "8.8.8.8")).json();
   assertEquals(j1.ad.provider, "admesh");

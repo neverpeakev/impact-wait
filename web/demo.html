@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ImpactWait demo</title>
+<title>Goodwait demo</title>
 <style>
   :root { --bg:#fbfaf7; --fg:#141414; --muted:#666; --line:#e6e3dc; --card:#fff; --me:#ececec; --good:#12805c; }
   @media (prefers-color-scheme: dark) { :root { --bg:#131313; --fg:#eee; --muted:#a3a3a3; --line:#2c2c2c; --card:#1b1b1b; --me:#2a2a2a; --good:#3ecf8e; } }
@@ -30,12 +30,12 @@
 </head>
 <body>
 <main>
-  <header><b>ImpactWait demo chat</b><a href="/">Live counter</a></header>
+  <header><b>Goodwait demo chat</b><a href="/">Live counter</a></header>
   <p class="note">This fake assistant "thinks" for a few seconds so you can see the sponsored line. The ad and the counter are real.</p>
   <div id="thread"></div>
   <div id="slot" hidden>
     <div class="thinking">Thinking</div>
-    <impact-wait id="iw" site="demo" linger="2500"></impact-wait>
+    <good-wait id="iw" site="demo" linger="2500"></good-wait>
   </div>
 </main>
 <form id="f">
@@ -48,7 +48,7 @@
     <div style="display:flex; gap:8px"><input id="q" placeholder="Ask anything..." autocomplete="off" maxlength="500"><button id="send">Send</button></div>
   </div>
 </form>
-<script src="/impact-wait.js"></script>
+<script src="/goodwait.js"></script>
 <script>
   const thread = document.getElementById("thread"), slot = document.getElementById("slot"), iw = document.getElementById("iw");
   const q = document.getElementById("q"), send = document.getElementById("send");

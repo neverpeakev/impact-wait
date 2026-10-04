@@ -1,6 +1,6 @@
-/*! ImpactWait v0.1.0 | MIT | Turn AI "thinking..." time into sponsored, cause-funding moments.
+/*! Goodwait v0.1.0 | MIT | Turn AI "thinking..." time into sponsored, cause-funding moments.
  *
- * <impact-wait site="your-app" active query="the user's prompt"></impact-wait>
+ * <good-wait site="your-app" active query="the user's prompt"></good-wait>
  *
  * Put it where your chat shows "thinking...". Set `active` while the model is
  * generating and `query` to the user's last message. It fetches one sponsored
@@ -9,9 +9,9 @@
  * briefly, then hides. No cookies, no user IDs, no ad keys in the browser.
  */
 (() => {
-  const DEFAULT_ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
-  const HOME = "https://impact-wait.vercel.app";
-  if (typeof window === "undefined" || !window.customElements || customElements.get("impact-wait")) return;
+  const DEFAULT_ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
+  const HOME = "https://goodwait.vercel.app";
+  if (typeof window === "undefined" || !window.customElements || customElements.get("good-wait")) return;
 
   const CSS = `
 :host { display:block; font:13px/1.35 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --iw-bg:#fff; --iw-fg:#111; --iw-muted:#666; --iw-line:rgba(0,0,0,.12); --iw-tag:#f1f1f1; --iw-accent:#0b6bcb; --iw-good:#12805c; }
@@ -36,7 +36,7 @@
   const fmt = (n) => Number(n || 0).toLocaleString("en-US");
   const safe = (u) => (typeof u === "string" && /^https:\/\//i.test(u) ? u : "");
 
-  class ImpactWait extends HTMLElement {
+  class Goodwait extends HTMLElement {
     static get observedAttributes() { return ["active", "query"]; }
     constructor() {
       super();
@@ -79,14 +79,14 @@
       // Let the caller set `query` in the same tick as `active`.
       await Promise.resolve();
       const query = this.query.trim();
-      if (!this.site || !query) { this._emit("impactwait:skip", { reason: !this.site ? "no site" : "no query" }); return; }
+      if (!this.site || !query) { this._emit("goodwait:skip", { reason: !this.site ? "no site" : "no query" }); return; }
       let data;
       try {
         const r = await fetch(`${this.endpoint}/ad`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ site: this.site, query: query.slice(0, 2000), response: this.response.slice(0, 1500), sessionId: this._session() }) });
         if (!r.ok) throw new Error("HTTP " + r.status);
         data = await r.json();
       } catch (e) {
-        this._emit("impactwait:error", { error: String(e && e.message || e) });
+        this._emit("goodwait:error", { error: String(e && e.message || e) });
         return;
       }
       if (my !== this._cycle || !data || !data.ad) return;
@@ -96,7 +96,7 @@
     _end() { this._on = false; clearTimeout(this._hideT); this._hideT = setTimeout(() => this._hide(), this.lingerMs); }
 
     _session() {
-      try { let s = sessionStorage.getItem("impactwait:s"); if (!s) { s = "iw_" + Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("impactwait:s", s); } return s; } catch (_) { return "iw_" + Date.now().toString(36); }
+      try { let s = sessionStorage.getItem("goodwait:s"); if (!s) { s = "iw_" + Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("goodwait:s", s); } return s; } catch (_) { return "iw_" + Date.now().toString(36); }
     }
 
     _render({ id, ad, impact, sandbox }) {
@@ -113,12 +113,12 @@
       const foot = el("div", "impact");
       const msg = el("span"); msg.append(el("i", "dot")); msg.append(document.createTextNode(sandbox ? "Test mode on this host - views are not counted" : impactLine(impact)));
       const home = document.createElement("a");
-      home.href = `${HOME}/?ref=${encodeURIComponent(this.site)}`; home.target = "_blank"; home.rel = "noopener"; home.textContent = "Powered by ImpactWait";
+      home.href = `${HOME}/?ref=${encodeURIComponent(this.site)}`; home.target = "_blank"; home.rel = "noopener"; home.textContent = "Powered by Goodwait";
       foot.append(msg, home);
       c.append(row, foot);
       this.hidden = false;
       requestAnimationFrame(() => c.classList.add("on"));
-      this._emit("impactwait:ad", { provider: ad.provider, id });
+      this._emit("goodwait:ad", { provider: ad.provider, id });
       this._observe();
     }
 
@@ -148,7 +148,7 @@
       this._stopObserving();
       try {
         await fetch(`${this.endpoint}/event`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: a.id, type: "impression" }), keepalive: true });
-        this._emit("impactwait:impression", { id: a.id, provider: a.ad.provider });
+        this._emit("goodwait:impression", { id: a.id, provider: a.ad.provider });
       } catch (_) { /* best effort */ }
     }
     _hide() {
@@ -176,6 +176,6 @@
     return a;
   }
 
-  customElements.define("impact-wait", ImpactWait);
-  window.ImpactWait = ImpactWait;
+  customElements.define("good-wait", Goodwait);
+  window.Goodwait = Goodwait;
 })();

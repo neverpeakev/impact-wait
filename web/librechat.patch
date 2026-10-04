@@ -8,12 +8,12 @@ index 454f84603..4022b3188 100644
  # MCP_CB_MAX_BACKOFF_MS=300000
 +
 +#==================================================#
-+#                    ImpactWait                    #
++#                    Goodwait                    #
 +#==================================================#
 +# While a reply generates, show one labeled sponsored line; part of the revenue funds a cause.
 +# Only the user's latest message and the site key leave the browser. localhost is never counted.
-+# IMPACT_WAIT=off                # disable for everyone
-+# IMPACT_WAIT_SITE=riverside-library   # leaderboard site key (default: derived from the hostname)
++# GOODWAIT=off                # disable for everyone
++# GOODWAIT_SITE=riverside-library   # leaderboard site key (default: derived from the hostname)
 diff --git a/.prettierignore b/.prettierignore
 index fff14af7a..b8f41193e 100644
 --- a/.prettierignore
@@ -23,8 +23,8 @@ index fff14af7a..b8f41193e 100644
  # checked by `openapi:check`. Do not let Prettier reformat it.
  packages/api/openapi/agents.openapi.json
 +
-+# Vendored ImpactWait web component, kept byte-identical to upstream so upgrades are a copy.
-+client/src/components/Chat/Messages/ImpactWait/element.js
++# Vendored Goodwait web component, kept byte-identical to upstream so upgrades are a copy.
++client/src/components/Chat/Messages/Goodwait/element.js
 diff --git a/NOTICE b/NOTICE
 new file mode 100644
 index 000000000..fd57b39a5
@@ -38,12 +38,12 @@ index 000000000..fd57b39a5
 +Copyright (c) LibreChat contributors, licensed under the MIT License (see LICENSE).
 +It is not affiliated with or endorsed by the LibreChat project.
 +
-+Modifications (2026), all for ImpactWait:
-+- client/src/components/Chat/Messages/ImpactWait/ (new): the sponsored line, site-key helper, tests;
-+  element.js is the MIT-licensed <impact-wait> web component, vendored byte-for-byte.
-+- client/src/components/Chat/Messages/MessagesView.tsx: renders <ImpactWait /> while a reply generates.
-+- client/src/store/impactWait.ts (new) + Settings registry/context/types + en translation: per-user toggle.
-+- api/server/routes/config.js + packages/data-provider/src/config.ts: IMPACT_WAIT / IMPACT_WAIT_SITE in startup config.
++Modifications (2026), all for Goodwait:
++- client/src/components/Chat/Messages/Goodwait/ (new): the sponsored line, site-key helper, tests;
++  element.js is the MIT-licensed <good-wait> web component, vendored byte-for-byte.
++- client/src/components/Chat/Messages/MessagesView.tsx: renders <Goodwait /> while a reply generates.
++- client/src/store/goodwait.ts (new) + Settings registry/context/types + en translation: per-user toggle.
++- api/server/routes/config.js + packages/data-provider/src/config.ts: GOODWAIT / GOODWAIT_SITE in startup config.
 +- .env.example, .prettierignore, README.md, NOTICE.
 diff --git a/README.md b/README.md
 index 279604df7..dc8657fb4 100644
@@ -53,7 +53,7 @@ index 279604df7..dc8657fb4 100644
    </a>
  </p>
  
-+## ImpactWait edition
++## Goodwait edition
 +
 +> Fork of [LibreChat](https://github.com/danny-avila/LibreChat) (MIT). Not affiliated with the LibreChat project. See [NOTICE](NOTICE).
 +
@@ -63,12 +63,12 @@ index 279604df7..dc8657fb4 100644
 +- **Privacy.** Only the user's latest message (to pick a relevant sponsor) and the site key leave the browser. No names, account IDs, chat history or cookies.
 +- **Honest counting.** A view counts only after the line is at least 50% on screen, in a visible tab, for 1 full second.
 +- **Local dev is a sandbox.** `localhost`, `127.0.0.1` and `*.local` get a house ad marked "Test mode"; nothing is counted.
-+- **Opt-outs.** `IMPACT_WAIT=off` turns it off for everyone. Each user can turn it off in Settings > Chat > "Show Sponsored Line While Waiting".
++- **Opt-outs.** `GOODWAIT=off` turns it off for everyone. Each user can turn it off in Settings > Chat > "Show Sponsored Line While Waiting".
 +
 +| Env var | What it does |
 +| --- | --- |
-+| `IMPACT_WAIT_SITE` | Optional leaderboard site key (2-41 chars: a-z, 0-9, dash). Default: derived from the hostname. |
-+| `IMPACT_WAIT=off` | Disables ImpactWait completely. |
++| `GOODWAIT_SITE` | Optional leaderboard site key (2-41 chars: a-z, 0-9, dash). Default: derived from the hostname. |
++| `GOODWAIT=off` | Disables Goodwait completely. |
 +
  ## 🚀 What's New in v0.8.8-rc4
  
@@ -81,31 +81,31 @@ index d3e3682ab..9682a2de3 100644
      allowAccountDeletion:
        process.env.ALLOW_ACCOUNT_DELETION === undefined ||
        isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
-+    impactWait: {
-+      enabled: process.env.IMPACT_WAIT?.trim().toLowerCase() !== 'off',
-+      site: process.env.IMPACT_WAIT_SITE?.trim() || undefined,
++    goodwait: {
++      enabled: process.env.GOODWAIT?.trim().toLowerCase() !== 'off',
++      site: process.env.GOODWAIT_SITE?.trim() || undefined,
 +    },
    };
  
    return payload;
-diff --git a/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx b/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx
+diff --git a/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx b/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx
 new file mode 100644
 index 000000000..67a8a656f
 --- /dev/null
-+++ b/client/src/components/Chat/Messages/ImpactWait/ImpactWait.tsx
++++ b/client/src/components/Chat/Messages/Goodwait/Goodwait.tsx
 @@ -0,0 +1,76 @@
 +import { createElement, useContext, useEffect, useState } from 'react';
 +import { useAtomValue } from 'jotai';
 +import { ThemeContext, isDark } from '@librechat/client';
 +import type { CSSProperties } from 'react';
 +import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
-+import { showImpactWaitAtom } from '~/store/impactWait';
++import { showGoodwaitAtom } from '~/store/goodwait';
 +import { useGetStartupConfig } from '~/data-provider';
 +import { resolveSiteKey } from './site';
 +import { cn } from '~/utils';
 +import './element';
 +
-+type ImpactWaitElement = HTMLElement & { query: string };
++type GoodwaitElement = HTMLElement & { query: string };
 +
 +/** The element styles itself in a shadow root; these hooks point its colors at the
 + *  app's semantic tokens so custom and high-contrast themes reach it too. */
@@ -119,12 +119,12 @@ index 000000000..67a8a656f
 +} as CSSProperties;
 +
 +/**
-+ * One labeled sponsored line (the vendored `<impact-wait>` element) under the
++ * One labeled sponsored line (the vendored `<good-wait>` element) under the
 + * in-progress response. It fetches only while `active`, sends nothing but the
 + * site key and `query`, counts a view after 1s at least half on screen, and
 + * hides itself a few seconds after `active` clears.
 + */
-+export default function ImpactWait({
++export default function Goodwait({
 +  active,
 +  query,
 +  maximizeChatSpace = false,
@@ -135,12 +135,12 @@ index 000000000..67a8a656f
 +}) {
 +  const { theme } = useContext(ThemeContext);
 +  const { data: startupConfig } = useGetStartupConfig();
-+  const showImpactWait = useAtomValue(showImpactWaitAtom);
-+  const [element, setElement] = useState<ImpactWaitElement | null>(null);
++  const showGoodwait = useAtomValue(showGoodwaitAtom);
++  const [element, setElement] = useState<GoodwaitElement | null>(null);
 +
-+  const config = startupConfig?.impactWait;
++  const config = startupConfig?.goodwait;
 +  const site =
-+    config?.enabled === true && showImpactWait
++    config?.enabled === true && showGoodwait
 +      ? resolveSiteKey(config.site, window.location.hostname)
 +      : '';
 +
@@ -159,22 +159,22 @@ index 000000000..67a8a656f
 +  return (
 +    <div className="w-full px-4 sm:px-0">
 +      <div className={cn('mx-auto', getMessageRowWidthClass({ fullWidth: maximizeChatSpace }))}>
-+        {createElement('impact-wait', {
++        {createElement('good-wait', {
 +          ref: setElement,
 +          site,
 +          style: themeTokens,
 +          theme: isDark(theme) ? 'dark' : 'light',
-+          'data-testid': 'impact-wait',
++          'data-testid': 'good-wait',
 +        })}
 +      </div>
 +    </div>
 +  );
 +}
-diff --git a/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts b/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts
+diff --git a/client/src/components/Chat/Messages/Goodwait/__tests__/site.spec.ts b/client/src/components/Chat/Messages/Goodwait/__tests__/site.spec.ts
 new file mode 100644
 index 000000000..2f8abdfe7
 --- /dev/null
-+++ b/client/src/components/Chat/Messages/ImpactWait/__tests__/site.spec.ts
++++ b/client/src/components/Chat/Messages/Goodwait/__tests__/site.spec.ts
 @@ -0,0 +1,31 @@
 +import { resolveSiteKey, siteKeyFromHost } from '../site';
 +
@@ -207,15 +207,15 @@ index 000000000..2f8abdfe7
 +    expect(resolveSiteKey('no spaces allowed', 'chat.example.edu')).toBe('chat-example-edu');
 +  });
 +});
-diff --git a/client/src/components/Chat/Messages/ImpactWait/element.js b/client/src/components/Chat/Messages/ImpactWait/element.js
+diff --git a/client/src/components/Chat/Messages/Goodwait/element.js b/client/src/components/Chat/Messages/Goodwait/element.js
 new file mode 100644
 index 000000000..9ac28db5f
 --- /dev/null
-+++ b/client/src/components/Chat/Messages/ImpactWait/element.js
++++ b/client/src/components/Chat/Messages/Goodwait/element.js
 @@ -0,0 +1,181 @@
-+/*! ImpactWait v0.1.0 | MIT | Turn AI "thinking..." time into sponsored, cause-funding moments.
++/*! Goodwait v0.1.0 | MIT | Turn AI "thinking..." time into sponsored, cause-funding moments.
 + *
-+ * <impact-wait site="your-app" active query="the user's prompt"></impact-wait>
++ * <good-wait site="your-app" active query="the user's prompt"></good-wait>
 + *
 + * Put it where your chat shows "thinking...". Set `active` while the model is
 + * generating and `query` to the user's last message. It fetches one sponsored
@@ -224,9 +224,9 @@ index 000000000..9ac28db5f
 + * briefly, then hides. No cookies, no user IDs, no ad keys in the browser.
 + */
 +(() => {
-+  const DEFAULT_ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/impact-wait";
-+  const HOME = "https://impact-wait.vercel.app";
-+  if (typeof window === "undefined" || !window.customElements || customElements.get("impact-wait")) return;
++  const DEFAULT_ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
++  const HOME = "https://goodwait.vercel.app";
++  if (typeof window === "undefined" || !window.customElements || customElements.get("good-wait")) return;
 +
 +  const CSS = `
 +:host { display:block; font:13px/1.35 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --iw-bg:#fff; --iw-fg:#111; --iw-muted:#666; --iw-line:rgba(0,0,0,.12); --iw-tag:#f1f1f1; --iw-accent:#0b6bcb; --iw-good:#12805c; }
@@ -251,7 +251,7 @@ index 000000000..9ac28db5f
 +  const fmt = (n) => Number(n || 0).toLocaleString("en-US");
 +  const safe = (u) => (typeof u === "string" && /^https:\/\//i.test(u) ? u : "");
 +
-+  class ImpactWait extends HTMLElement {
++  class Goodwait extends HTMLElement {
 +    static get observedAttributes() { return ["active", "query"]; }
 +    constructor() {
 +      super();
@@ -294,14 +294,14 @@ index 000000000..9ac28db5f
 +      // Let the caller set `query` in the same tick as `active`.
 +      await Promise.resolve();
 +      const query = this.query.trim();
-+      if (!this.site || !query) { this._emit("impactwait:skip", { reason: !this.site ? "no site" : "no query" }); return; }
++      if (!this.site || !query) { this._emit("goodwait:skip", { reason: !this.site ? "no site" : "no query" }); return; }
 +      let data;
 +      try {
 +        const r = await fetch(`${this.endpoint}/ad`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ site: this.site, query: query.slice(0, 2000), response: this.response.slice(0, 1500), sessionId: this._session() }) });
 +        if (!r.ok) throw new Error("HTTP " + r.status);
 +        data = await r.json();
 +      } catch (e) {
-+        this._emit("impactwait:error", { error: String(e && e.message || e) });
++        this._emit("goodwait:error", { error: String(e && e.message || e) });
 +        return;
 +      }
 +      if (my !== this._cycle || !data || !data.ad) return;
@@ -311,7 +311,7 @@ index 000000000..9ac28db5f
 +    _end() { this._on = false; clearTimeout(this._hideT); this._hideT = setTimeout(() => this._hide(), this.lingerMs); }
 +
 +    _session() {
-+      try { let s = sessionStorage.getItem("impactwait:s"); if (!s) { s = "iw_" + Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("impactwait:s", s); } return s; } catch (_) { return "iw_" + Date.now().toString(36); }
++      try { let s = sessionStorage.getItem("goodwait:s"); if (!s) { s = "iw_" + Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("goodwait:s", s); } return s; } catch (_) { return "iw_" + Date.now().toString(36); }
 +    }
 +
 +    _render({ id, ad, impact, sandbox }) {
@@ -328,12 +328,12 @@ index 000000000..9ac28db5f
 +      const foot = el("div", "impact");
 +      const msg = el("span"); msg.append(el("i", "dot")); msg.append(document.createTextNode(sandbox ? "Test mode on this host - views are not counted" : impactLine(impact)));
 +      const home = document.createElement("a");
-+      home.href = `${HOME}/?ref=${encodeURIComponent(this.site)}`; home.target = "_blank"; home.rel = "noopener"; home.textContent = "Powered by ImpactWait";
++      home.href = `${HOME}/?ref=${encodeURIComponent(this.site)}`; home.target = "_blank"; home.rel = "noopener"; home.textContent = "Powered by Goodwait";
 +      foot.append(msg, home);
 +      c.append(row, foot);
 +      this.hidden = false;
 +      requestAnimationFrame(() => c.classList.add("on"));
-+      this._emit("impactwait:ad", { provider: ad.provider, id });
++      this._emit("goodwait:ad", { provider: ad.provider, id });
 +      this._observe();
 +    }
 +
@@ -363,7 +363,7 @@ index 000000000..9ac28db5f
 +      this._stopObserving();
 +      try {
 +        await fetch(`${this.endpoint}/event`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: a.id, type: "impression" }), keepalive: true });
-+        this._emit("impactwait:impression", { id: a.id, provider: a.ad.provider });
++        this._emit("goodwait:impression", { id: a.id, provider: a.ad.provider });
 +      } catch (_) { /* best effort */ }
 +    }
 +    _hide() {
@@ -391,22 +391,22 @@ index 000000000..9ac28db5f
 +    return a;
 +  }
 +
-+  customElements.define("impact-wait", ImpactWait);
-+  window.ImpactWait = ImpactWait;
++  customElements.define("good-wait", Goodwait);
++  window.Goodwait = Goodwait;
 +})();
-diff --git a/client/src/components/Chat/Messages/ImpactWait/index.ts b/client/src/components/Chat/Messages/ImpactWait/index.ts
+diff --git a/client/src/components/Chat/Messages/Goodwait/index.ts b/client/src/components/Chat/Messages/Goodwait/index.ts
 new file mode 100644
 index 000000000..e55d9e709
 --- /dev/null
-+++ b/client/src/components/Chat/Messages/ImpactWait/index.ts
++++ b/client/src/components/Chat/Messages/Goodwait/index.ts
 @@ -0,0 +1,2 @@
-+export { default } from './ImpactWait';
++export { default } from './Goodwait';
 +export { resolveSiteKey, siteKeyFromHost } from './site';
-diff --git a/client/src/components/Chat/Messages/ImpactWait/site.ts b/client/src/components/Chat/Messages/ImpactWait/site.ts
+diff --git a/client/src/components/Chat/Messages/Goodwait/site.ts b/client/src/components/Chat/Messages/Goodwait/site.ts
 new file mode 100644
 index 000000000..233f2d2f4
 --- /dev/null
-+++ b/client/src/components/Chat/Messages/ImpactWait/site.ts
++++ b/client/src/components/Chat/Messages/Goodwait/site.ts
 @@ -0,0 +1,19 @@
 +const SITE_KEY = /^[a-z0-9][a-z0-9-]{1,40}$/;
 +
@@ -422,7 +422,7 @@ index 000000000..233f2d2f4
 +  return SITE_KEY.test(key) ? key : '';
 +}
 +
-+/** The operator's `IMPACT_WAIT_SITE` when it is a valid key, else the key derived from the host. */
++/** The operator's `GOODWAIT_SITE` when it is a valid key, else the key derived from the host. */
 +export function resolveSiteKey(configured: string | undefined, host: string): string {
 +  const site = (configured ?? '').trim().toLowerCase();
 +  return SITE_KEY.test(site) ? site : siteKeyFromHost(host);
@@ -435,7 +435,7 @@ index 1369a7479..aca474f52 100644
  import MultiMessage from './MultiMessage';
  import ScrollButton from './ScrollButton';
  import PendingTurn from './PendingTurn';
-+import ImpactWait from './ImpactWait';
++import Goodwait from './Goodwait';
  import MessageNav from './MessageNav';
  import { cn } from '~/utils';
  import store from '~/store';
@@ -451,7 +451,7 @@ index 1369a7479..aca474f52 100644
                      messages={messages}
                      maximizeChatSpace={maximizeChatSpace}
                    />
-+                  <ImpactWait
++                  <Goodwait
 +                    active={isSubmitting}
 +                    query={submission?.userMessage?.text ?? ''}
 +                    maximizeChatSpace={maximizeChatSpace}
@@ -467,7 +467,7 @@ index 8272fe91d..63b28c239 100644
    engineTTS: 'browser',
    langfuseConnectionAccess: false,
    adminPanelURL: '',
-+  impactWaitEnabled: false,
++  goodwaitEnabled: false,
  };
  
  function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
@@ -479,7 +479,7 @@ index d277ebfe4..dac650aa3 100644
    engineTTS: 'browser',
    langfuseConnectionAccess: false,
    adminPanelURL: '',
-+  impactWaitEnabled: false,
++  goodwaitEnabled: false,
  };
  
  describe('settings registry', () => {
@@ -491,7 +491,7 @@ index bb725d3c7..314867d16 100644
    const balanceEnabled = startupConfig?.balance?.enabled === true;
    const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
    const adminPanelURL = startupConfig?.adminPanelURL ?? '';
-+  const impactWaitEnabled = startupConfig?.impactWait?.enabled === true;
++  const goodwaitEnabled = startupConfig?.goodwait?.enabled === true;
    const isLocalProvider = user?.provider === 'local';
    const twoFactorEnabled = user?.twoFactorEnabled === true;
    const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
@@ -499,7 +499,7 @@ index bb725d3c7..314867d16 100644
        engineTTS,
        langfuseConnectionAccess,
        adminPanelURL,
-+      impactWaitEnabled,
++      goodwaitEnabled,
      }),
      [
        balanceEnabled,
@@ -507,7 +507,7 @@ index bb725d3c7..314867d16 100644
        engineTTS,
        langfuseConnectionAccess,
        adminPanelURL,
-+      impactWaitEnabled,
++      goodwaitEnabled,
      ],
    );
  }
@@ -519,7 +519,7 @@ index ba831ccbd..537d29a3a 100644
  import SharedLinks from '../SettingsTabs/Data/SharedLinks';
  import ImageResize from '../SettingsTabs/Chat/ImageResize';
  import { showThinkingAtom } from '~/store/showThinking';
-+import { showImpactWaitAtom } from '~/store/impactWait';
++import { showGoodwaitAtom } from '~/store/goodwait';
  import ProviderKeys from '../SettingsTabs/ProviderKeys';
  import { autoScrollAtom } from '~/store/autoScroll';
  import Avatar from '../SettingsTabs/Account/Avatar';
@@ -528,17 +528,17 @@ index ba831ccbd..537d29a3a 100644
      }),
    },
 +  {
-+    id: 'showImpactWait',
++    id: 'showGoodwait',
 +    tab: CHAT,
 +    section: 'messages',
-+    labelKey: 'com_nav_show_impact_wait',
-+    keywords: ['sponsored', 'ads', 'impactwait', 'waiting'],
-+    show: (ctx) => ctx.impactWaitEnabled,
++    labelKey: 'com_nav_show_goodwait',
++    keywords: ['sponsored', 'ads', 'goodwait', 'waiting'],
++    show: (ctx) => ctx.goodwaitEnabled,
 +    Component: toggleControl({
-+      stateAtom: showImpactWaitAtom,
-+      localizationKey: 'com_nav_show_impact_wait',
-+      switchId: 'showImpactWait',
-+      hoverCardText: 'com_nav_info_show_impact_wait',
++      stateAtom: showGoodwaitAtom,
++      localizationKey: 'com_nav_show_goodwait',
++      switchId: 'showGoodwait',
++      hoverCardText: 'com_nav_info_show_goodwait',
 +    }),
 +  },
    {
@@ -552,7 +552,7 @@ index faf1c6b12..9ee834df0 100644
    engineTTS: string;
    langfuseConnectionAccess: boolean;
    adminPanelURL: string;
-+  impactWaitEnabled: boolean;
++  goodwaitEnabled: boolean;
  }
  
  export interface SettingEntry {
@@ -564,7 +564,7 @@ index 47b7bfb1a..ae90e240c 100644
    "com_nav_info_paste_long_text_as_file": "When enabled, pasting very long text attaches it as a text file instead of filling the message box. File processing limits may apply.",
    "com_nav_info_save_badges_state": "When enabled, the state of the chat badges will be saved. This means that if you create a new chat, the badges will remain in the same state as the previous chat. If you disable this option, the badges will reset to their default state every time you create a new chat",
    "com_nav_info_save_draft": "When enabled, the text and attachments you enter in the chat form will be automatically saved locally as drafts. These drafts will be available even if you reload the page or switch to a different conversation. Drafts are stored locally on your device and are deleted once the message is sent.",
-+  "com_nav_info_show_impact_wait": "While a reply is generating, show one labeled sponsored line from ImpactWait. Half of the net ad revenue is donated to Khan Academy. Only your latest message is sent to choose the sponsor; no name, account ID or cookies.",
++  "com_nav_info_show_goodwait": "While a reply is generating, show one labeled sponsored line from Goodwait. Half of the net ad revenue is donated to Khan Academy. Only your latest message is sent to choose the sponsor; no name, account ID or cookies.",
    "com_nav_info_show_thinking": "When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI's reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface",
    "com_nav_info_smooth_streaming": "When enabled, newly streamed words fade in smoothly for the latest response. This is purely visual — it does not delay token delivery — and is disabled automatically when your device prefers reduced motion.",
    "com_nav_info_stateful_sessions": "When enabled, this agent uses the dedicated stateful Code API instead of the default stateless service. Retained files under /mnt/data carry across runs, but each run starts a fresh process. Shell variables, the working directory, $HOME, temporary files, global installs, and background processes are not durable. The runtime may reset, so keep anything important under /mnt/data. Requires Code Interpreter and the app-level stateful sessions capability.",
@@ -572,20 +572,20 @@ index 47b7bfb1a..ae90e240c 100644
    "com_nav_setting_speech": "Speech",
    "com_nav_settings": "Settings",
    "com_nav_shared_links": "Shared chats",
-+  "com_nav_show_impact_wait": "Show Sponsored Line While Waiting",
++  "com_nav_show_goodwait": "Show Sponsored Line While Waiting",
    "com_nav_show_thinking": "Open Thinking Dropdowns by Default",
    "com_nav_slash_command": "/-Command",
    "com_nav_slash_command_description": "Toggle command \"/\" for selecting a prompt via keyboard",
-diff --git a/client/src/store/impactWait.ts b/client/src/store/impactWait.ts
+diff --git a/client/src/store/goodwait.ts b/client/src/store/goodwait.ts
 new file mode 100644
 index 000000000..0dff813e9
 --- /dev/null
-+++ b/client/src/store/impactWait.ts
++++ b/client/src/store/goodwait.ts
 @@ -0,0 +1,4 @@
 +import { createStorageAtom } from './jotai-utils';
 +
-+/** Per-user opt-out for the ImpactWait sponsored line; the operator switch is `IMPACT_WAIT`. */
-+export const showImpactWaitAtom = createStorageAtom<boolean>('showImpactWait', true);
++/** Per-user opt-out for the Goodwait sponsored line; the operator switch is `GOODWAIT`. */
++export const showGoodwaitAtom = createStorageAtom<boolean>('showGoodwait', true);
 diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
 index 21288b3dd..f9348daf3 100644
 --- a/packages/data-provider/src/config.ts
@@ -594,9 +594,9 @@ index 21288b3dd..f9348daf3 100644
    };
    fileUploadSseEnabled?: boolean;
    endpointsDropParamsMap?: EndpointsDropParamsMap;
-+  /** ImpactWait sponsored line shown while a reply generates: `IMPACT_WAIT=off` disables it,
-+   *  `IMPACT_WAIT_SITE` sets the site key (otherwise the client derives one from its hostname). */
-+  impactWait?: {
++  /** Goodwait sponsored line shown while a reply generates: `GOODWAIT=off` disables it,
++   *  `GOODWAIT_SITE` sets the site key (otherwise the client derives one from its hostname). */
++  goodwait?: {
 +    enabled: boolean;
 +    site?: string;
 +  };
