@@ -25,8 +25,27 @@ export type GoodwaitCurrent = {
   impressed: boolean
 }
 
+export type GoodwaitLeader = {
+  site_key: string
+  name: string | null
+  sponsored_waits: number
+}
+
+export type GoodwaitStats = {
+  total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }
+  site: { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number } | null
+  leaderboard: GoodwaitLeader[]
+  impact: GoodwaitImpact
+  fetchedAt: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'goodwait': { current: GoodwaitCurrent | null; isHidden: boolean }
+    'goodwait': {
+      current: GoodwaitCurrent | null
+      isHidden: boolean
+      sessionWaits: number
+      stats: GoodwaitStats | null
+    }
   }
 }

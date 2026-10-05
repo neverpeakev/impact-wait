@@ -1,7 +1,7 @@
 {
   "name": "goodwait",
-  "version": "0.1.0",
-  "description": "Goodwait for Claude Code: one sponsored line above the prompt while Claude works; half of the net ad revenue goes to Khan Academy.",
+  "version": "0.2.0",
+  "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, the public counter in the status line and a /goodwait pane; half of the net ad revenue goes to Khan Academy.",
   "types": "./types/index.d.ts",
   "userConfig": {
     "site": {
