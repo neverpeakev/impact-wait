@@ -2,7 +2,7 @@
 //   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact}
 //   POST /event   {id, type:"impression"}               -> {ok}
 //   GET  /click?id=...                                   -> 302 to the advertiser
-//   GET  /stats?site=...                                 -> public counter + leaderboard
+//   GET  /stats?site=...                                 -> public counter + leaderboard (+ actual earnings for the site)
 //   GET  /health                                         -> which networks are configured
 //   GET  /embed.js                                       -> the <good-wait> web component
 import { EMBED_JS } from "./embed.ts";
@@ -10,6 +10,8 @@ import { type Ad, type Attempt, confirmImpression, reportClick, runChain } from 
 
 export type AdRow = { id: string; site_key: string; provider: string; live: boolean; tracking: Record<string, unknown>; click_url: string | null; created_at: Date; impression_at: Date | null; click_at: Date | null };
 export type Impact = { cause_name: string | null; cause_url: string | null; unit_label: string | null; usd_per_unit: number | null; pledge_pct: number | null; donated_usd: number; donated_updated_at: Date | null };
+// Actual publisher earnings as a network's dashboard reported them (newest report per network).
+export type Earning = { network: string; site_key: string | null; earned_usd: number; paid_waits: number | null; clicks: number | null; as_of: Date | string; source: string };
 export interface Store {
   ensureSite(site: string, origin: string): Promise<boolean>;
   recentAds(ipHash: string, seconds: number): Promise<number>;
@@ -18,7 +20,7 @@ export interface Store {
   claimImpression(id: string, minAgeMs: number): Promise<AdRow | null>;
   finishImpression(id: string, site: string, confirmStatus: number, paid: boolean): Promise<void>;
   claimClick(id: string): Promise<{ row: AdRow; first: boolean } | null>;
-  stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact }>;
+  stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact; earnings?: Earning[] }>;
 }
 export type Keys = { idlen?: string; admesh?: string; agentads?: string };
 
@@ -121,7 +123,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       if (route === "/stats" && req.method === "GET") {
         const site = (url.searchParams.get("site") || "").toLowerCase();
         const st = await store.stats(SITE_RE.test(site) ? site : null);
-        return json({ total: st.total, site: st.site, leaderboard: st.leaderboard, impact: impactSummary(st.impact, st.total.sponsored_waits) }, 200, { "Cache-Control": "public, max-age=15" });
+        return json({ total: st.total, site: st.site, leaderboard: st.leaderboard, impact: impactSummary(st.impact, st.total.sponsored_waits), earnings: st.earnings ?? [] }, 200, { "Cache-Control": "public, max-age=15" });
       }
 
       return json({ error: "not found" }, 404);

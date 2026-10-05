@@ -44,6 +44,7 @@ export function memStore(impact: Partial<Impact> = {}): Store & { ads: Map<strin
         site: site && totals.has(site) ? { site_key: site, name: null, ...totals.get(site) } : null,
         leaderboard: all.filter(([, t]) => t.sponsored_waits > 0).sort((a, b) => b[1].sponsored_waits - a[1].sponsored_waits).slice(0, 10).map(([k, t]) => ({ site_key: k, name: null, sponsored_waits: t.sponsored_waits })),
         impact: imp,
+        earnings: [],
       };
     },
   };

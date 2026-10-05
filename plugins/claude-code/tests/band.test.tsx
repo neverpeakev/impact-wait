@@ -42,6 +42,7 @@ const BAND = {
 } as const
 
 type Seen = {
+  earnings: unknown[]
   fetched: { url: string; body?: string }[]
   status: (string | undefined)[]
   toasts: string[]
@@ -49,7 +50,7 @@ type Seen = {
   opened: string[]
 }
 
-const seen = (): Seen => ({ fetched: [], status: [], toasts: [], runs: [], opened: [] })
+const seen = (): Seen => ({ earnings: [], fetched: [], status: [], toasts: [], runs: [], opened: [] })
 
 const STATS = {
   total: { sponsored_waits: 1234, paid_waits: 900, clicks: 12, sites: 3 },
@@ -59,6 +60,7 @@ const STATS = {
     { site_key: 'claude-code', name: null, sponsored_waits: 40 },
   ],
   impact: AD_RESPONSE.impact,
+  earnings: [] as unknown[],
 }
 
 const PANE = {
@@ -106,7 +108,7 @@ function bottom(on: On, s: Seen) {
     const ok = (text: string) => ({ value: { status: 200, ok: true, headers: {}, text } })
     if (e.url.endsWith('/ad')) return ok(JSON.stringify(AD_RESPONSE))
     if (e.url.endsWith('/event')) return ok('{"ok":true,"counted":true}')
-    if (e.url.includes('/stats')) return ok(JSON.stringify(STATS))
+    if (e.url.includes('/stats')) return ok(JSON.stringify({ ...STATS, earnings: s.earnings }))
     return { value: { status: 404, ok: false, headers: {}, text: '' } }
   })
 }
@@ -148,7 +150,7 @@ test('the line shows during a turn, counts after one second, clears after the li
     expect(await ui.find({ type: 'Link' })).toBeUndefined() // no raw redirect URL on the band
     expect((await ui.find({ key: 'open' }))?.props.label).toBe('Learn more')
     expect(await ui.find({ type: 'Text', text: /Fuel Path Pro/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /est. earned \$0\.00 this session · \$0\.98 lifetime · 1,234 waits so far/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^est\. \$0\.98 lifetime · est\. \$0\.00 this session · 1,234 waits so far/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Khan Academy/ })).toBeUndefined() // no cause line on the band
     expect(await ui.find({ key: 'hide' })).toBeDefined()
     await ui.unmount()
@@ -333,4 +335,30 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
     expect(s.runs.at(-1)).toEqual(['open', 'https://goodwait.vercel.app/?ref=claude-code'])
     await ui.unmount()
   }
+})
+
+test('a recorded dashboard actual replaces the estimate, plus an estimate for waits counted since', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const s = seen()
+  // Idlen reported $0.60 on 32 paid waits; the API has counted 40, so 8 more are estimated at $24.50 eCPM = $0.196.
+  s.earnings = [{ network: 'idlen', site_key: 'claude-code', earned_usd: 0.6, paid_waits: 32, clicks: 1, as_of: '2026-10-05T19:00:00Z', source: 'dashboard' }]
+  bottom(on, s)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await clock.advance(0)
+  await clock.settle()
+  expect(s.status.at(-1)).toBe('1,234 waits · $0.80 earned')
+
+  await $.turn.start({ text: 'what is a monad', turnId: 't9' })
+  await clock.advance(0)
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
+  expect(await band.find({ type: 'Text', text: /^\$0\.80 lifetime \(actual as of Oct 5\)/ })).toBeDefined()
+  await band.unmount()
+
+  const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /lifetime earnings \(actual as of Oct 5\)/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /idlen: \$0\.60 actual on 32 paid waits \(dashboard, Oct 5\)/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\+ est\. \$0\.20 for paid waits counted since/ })).toBeDefined()
+  await ui.unmount()
 })

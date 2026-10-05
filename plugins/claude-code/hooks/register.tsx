@@ -14,9 +14,11 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitImpact, GoodwaitStats } from 
 // the ad opens it in the browser through the server's click redirect (so
 // clicks count), and a toast marks the 10th, 50th and 100th wait of a session.
 //
-// Earnings are estimates: counted paid waits x the eCPM in settings. The
-// default is Idlen's published network average for this format ($35 CPM) times
-// the publisher's 70% share. Idlen's dashboard is the exact balance.
+// Earnings: when a network's dashboard figure has been recorded in the API
+// (the earnings table), lifetime shows that actual, plus an estimate for the
+// paid waits counted since that report. With no actual recorded, everything is
+// an estimate: counted paid waits x the eCPM in settings (default: Idlen's
+// published $35 network-average CPM for this format x the 70% publisher share).
 //
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
@@ -67,6 +69,26 @@ function earned(paidWaits: number, ecpm: number): number {
   return (paidWaits / 1000) * ecpm
 }
 
+// Lifetime earnings for the site: the networks' actuals when recorded, plus an
+// estimate for paid waits counted after the newest report; else all estimate.
+function lifetime(st: GoodwaitStats | null, ecpm: number): { usd: number; isActual: boolean; asOf: string | null; estSince: number } {
+  const paid = st?.site ? st.site.paid_waits : 0
+  const rows = st?.earnings ?? []
+  if (rows.length === 0) return { usd: earned(paid, ecpm), isActual: false, asOf: null, estSince: 0 }
+  const actual = rows.reduce((sum, r) => sum + (Number(r.earned_usd) || 0), 0)
+  const reported = rows.reduce((sum, r) => sum + (r.paid_waits ?? 0), 0)
+  const hasCounts = rows.some(r => r.paid_waits !== null && r.paid_waits !== undefined)
+  const estSince = hasCounts ? earned(Math.max(0, paid - reported), ecpm) : 0
+  const asOf = rows.map(r => String(r.as_of)).sort().at(-1) ?? null
+  return { usd: actual + estSince, isActual: true, asOf, estSince }
+}
+
+function shortDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 // Background work that nobody awaits. A write after the module was unloaded
 // (a timer firing during a reload) rejects; that is not an error worth a log.
 function fire(p: Promise<unknown>) {
@@ -98,7 +120,7 @@ async function fetchStats($: EngineInterface, cfg: Config): Promise<GoodwaitStat
     return null
   }
   if (!st || !st.total || !st.impact) return null
-  const full: GoodwaitStats = { ...st, leaderboard: st.leaderboard ?? [], fetchedAt: await $.clock.now() }
+  const full: GoodwaitStats = { ...st, leaderboard: st.leaderboard ?? [], earnings: st.earnings ?? [], fetchedAt: await $.clock.now() }
   await update($, stats, () => full)
   return full
 }
@@ -114,8 +136,8 @@ async function paintStatus($: EngineInterface, cfg: Config) {
     $.ui.status('counting waits')
     return
   }
-  const mine = st.site ? st.site.paid_waits : 0
-  $.ui.status(`${num(st.total.sponsored_waits)} waits · est. ${money(earned(mine, cfg.ecpm))} earned`)
+  const life = lifetime(st, cfg.ecpm)
+  $.ui.status(`${num(st.total.sponsored_waits)} waits · ${life.isActual ? '' : 'est. '}${money(life.usd)} earned`)
 }
 
 async function refreshStats($: EngineInterface, cfg: Config) {
@@ -282,7 +304,8 @@ export const register: Register = (on, options) => {
     const wide = e.props.bodyColumns >= WIDE_COLUMNS
     const st = await read($, stats)
     const paidNow = await read($, sessionPaid)
-    const lifetime = st?.site ? st.site.paid_waits : 0
+    const life = lifetime(st, cfg.ecpm)
+    const lifeLabel = life.isActual ? `${money(life.usd)} lifetime (actual as of ${shortDate(life.asOf)})` : `est. ${money(life.usd)} lifetime`
     const mode = shown.sandbox ? ' · test mode, nothing counted' : ''
     const body = wide && ad.body && ad.body !== ad.headline ? ad.body : ''
 
@@ -324,7 +347,7 @@ export const register: Register = (on, options) => {
           />
         </Box>
         <Text dimColor wrap="truncate-end">
-          est. earned {money(earned(paidNow, cfg.ecpm))} this session · {money(earned(lifetime, cfg.ecpm))} lifetime · {num(impact.sponsored_waits)} waits so far{mode}
+          {lifeLabel} · est. {money(earned(paidNow, cfg.ecpm))} this session · {num(impact.sponsored_waits)} waits so far{mode}
         </Text>
       </Box>
     )
@@ -349,7 +372,8 @@ export const register: Register = (on, options) => {
 
     const paidNow = await read($, sessionPaid)
     const lifetimePaid = st.site ? st.site.paid_waits : 0
-    const lifetimeEarned = earned(lifetimePaid, cfg.ecpm)
+    const life = lifetime(st, cfg.ecpm)
+    const lifetimeEarned = life.usd
     const pledgePct = st.impact.pledge_pct ?? 50
     const cause = st.impact.cause_name || 'the cause'
     const leaders = st.leaderboard.slice(0, 10)
@@ -363,7 +387,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row">
           <Box flexDirection="column" width={col}>
             <Text bold>{money(lifetimeEarned)}</Text>
-            <Text dimColor>est. lifetime earnings</Text>
+            <Text dimColor>{life.isActual ? `lifetime earnings (actual as of ${shortDate(life.asOf)})` : 'est. lifetime earnings'}</Text>
           </Box>
           <Box flexDirection="column" width={col}>
             <Text bold>{money(earned(paidNow, cfg.ecpm))}</Text>
@@ -375,8 +399,14 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
         <Text> </Text>
+        {st.earnings.map(r => (
+          <Text dimColor key={`earn-${r.network}`}>
+            {r.network}: {money(Number(r.earned_usd))} actual{r.paid_waits !== null ? ` on ${num(r.paid_waits)} paid waits` : ''} ({r.source}, {shortDate(String(r.as_of))})
+          </Text>
+        ))}
+        {life.isActual && life.estSince > 0 ? <Text dimColor>+ est. {money(life.estSince)} for paid waits counted since that report</Text> : null}
         <Text dimColor wrap="wrap">
-          Estimates: paid waits x {money(cfg.ecpm)} eCPM (Idlen's published $35 network average for this format x your 70% share). Change the eCPM in /config. Idlen pays monthly once you pass $50; its dashboard is the exact balance.
+          Estimates use {money(cfg.ecpm)} eCPM (Idlen's published $35 network average for this format x your 70% share); change it in /config. Idlen pays monthly once you pass $50; its dashboard is the exact balance.
         </Text>
         <Text dimColor>
           {pledgePct}% of net is pledged to {cause}: about {money(lifetimeEarned * (pledgePct / 100))} so far.

@@ -30,7 +30,16 @@ Or add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` so i
 In `/config` under **goodwait**:
 
 - **Site key** (default `claude-code`): your name on the public leaderboard. `sandbox` shows a house ad and counts nothing.
-- **Estimated eCPM (USD)** (default 24.50): what you earn per 1,000 counted paid waits. The default is Idlen's published $35 network average for sponsored recommendations times the 70% publisher share. All earnings in the mod are estimates from this number; Idlen's dashboard is the exact balance, paid monthly once you pass $50.
+- **Estimated eCPM (USD)** (default 24.50): what you earn per 1,000 counted paid waits. The default is Idlen's published $35 network average for sponsored recommendations times the 70% publisher share. Idlen's dashboard is the exact balance, paid monthly once you pass $50.
+
+## Actual earnings
+
+When a network's dashboard figure is recorded in the API (`impact_wait.earnings`, one row per report), the mod shows that actual as lifetime earnings, plus an estimate for the paid waits counted after the report. With no actual recorded, lifetime is an estimate from the eCPM. To record a figure:
+
+```sql
+insert into impact_wait.earnings (network, site_key, earned_usd, paid_waits, clicks, as_of, source)
+values ('idlen', 'claude-code', 0.63, 30, 1, now(), 'idlen dashboard');
+```
 - **API endpoint**: leave as is unless you self-host the API.
 
 Commands: `/goodwait` opens the counter pane, `/goodwait off` and `/goodwait on` toggle the line. The `hide` button does the same and remembers your choice across sessions.

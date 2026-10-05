@@ -50,11 +50,17 @@ export function pgStore(dbUrl: string): Store {
         if (r) s = { site_key: r.site_key, name: r.name, sponsored_waits: Number(r.sponsored_waits), paid_waits: Number(r.paid_waits), clicks: Number(r.clicks) };
       }
       const [imp] = await sql`select cause_name, cause_url, unit_label, usd_per_unit, pledge_pct, donated_usd, donated_updated_at from impact_wait.impact`;
+      // Newest dashboard report per network, for this site or the whole account (site_key null).
+      const earnings = site
+        ? await sql`select distinct on (network, site_key) network, site_key, earned_usd::float8 as earned_usd, paid_waits, clicks, as_of, source
+            from impact_wait.earnings where site_key = ${site} or site_key is null order by network, site_key, as_of desc`
+        : [];
       return {
         total: { sponsored_waits: Number(t.sponsored_waits), paid_waits: Number(t.paid_waits), clicks: Number(t.clicks), sites: t.sites },
         site: s,
         leaderboard: lb.map((r: any) => ({ site_key: r.site_key, name: r.name, sponsored_waits: Number(r.sponsored_waits) })),
         impact: imp as unknown as Impact,
+        earnings: earnings.map((r: any) => ({ network: r.network, site_key: r.site_key, earned_usd: Number(r.earned_usd), paid_waits: r.paid_waits, clicks: r.clicks, as_of: r.as_of, source: r.source })),
       };
     },
   };

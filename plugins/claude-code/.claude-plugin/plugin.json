@@ -1,6 +1,6 @@
 {
   "name": "goodwait",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, your estimated earnings in the status line and a /goodwait pane.",
   "types": "./types/index.d.ts",
   "userConfig": {

@@ -31,11 +31,23 @@ export type GoodwaitLeader = {
   sponsored_waits: number
 }
 
+// Actual publisher earnings as a network's dashboard reported them, newest report per network.
+export type GoodwaitEarning = {
+  network: string
+  site_key: string | null
+  earned_usd: number
+  paid_waits: number | null
+  clicks: number | null
+  as_of: string
+  source: string
+}
+
 export type GoodwaitStats = {
   total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }
   site: { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number } | null
   leaderboard: GoodwaitLeader[]
   impact: GoodwaitImpact
+  earnings: GoodwaitEarning[]
   fetchedAt: number
 }
 
