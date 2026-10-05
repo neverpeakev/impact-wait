@@ -3,7 +3,7 @@
 A Claude Code mod (plugin of function hooks). While Claude works, one labeled sponsored line sits above the prompt:
 
 ```
-Sponsored · Wispr Flow: Talk instead of type  Try free  hide
+Sponsored · Wispr Flow: Talk instead of type  1: Try free  2: counter  h: hide
 50% of net ad revenue goes to Khan Academy · 1,234 waits so far
 ```
 
@@ -11,8 +11,8 @@ It appears when a turn starts, counts a view only after it has been on screen fo
 
 Around it:
 
-- **Status line**: `Goodwait · 1,234 waits · 50% to Khan Academy`, always visible while the mod is on, refreshed every 5 minutes and after each counted wait.
-- **Band controls** (focus the band with ctrl+x tab, then a key): `1` opens the ad in your browser through the server's click redirect, so clicks count like web clicks; `2` opens the counter pane; `h` hides the line.
+- **Status line**: `goodwait: 1,234 waits · 50% to Khan Academy`, always visible while the mod is on, refreshed every 5 minutes and after each counted wait.
+- **Band controls** (focus the band with ctrl+x tab, then a key): `1` (the ad's call to action) opens it in your browser through the server's click redirect, so clicks count like web clicks; `2` opens the counter pane; `h` hides the line.
 - **Counter pane**: `/goodwait` opens a pane with the public total, the amount donated, your waits this session, the leaderboard and this site's numbers. Keys: `r` refresh, `t` turn the line off or on, `o` open the counter page.
 - **Milestones**: a toast at your 10th, 50th, 100th, 250th, 500th and 1,000th wait of a session.
 

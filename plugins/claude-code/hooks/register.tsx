@@ -101,12 +101,12 @@ async function paintStatus($: EngineInterface) {
   }
   const st = await read($, stats)
   if (!st) {
-    $.ui.status('Goodwait · counting waits')
+    $.ui.status('counting waits')
     return
   }
   const cause = st.impact.cause_name || 'a good cause'
   const given = st.impact.donated_usd > 0 ? ` · ${money(st.impact.donated_usd)} to ${cause}` : ` · ${st.impact.pledge_pct ?? 50}% to ${cause}`
-  $.ui.status(`Goodwait · ${num(st.total.sponsored_waits)} waits${given}`)
+  $.ui.status(`${num(st.total.sponsored_waits)} waits${given}`)
 }
 
 async function refreshStats($: EngineInterface, cfg: Config) {
@@ -272,15 +272,12 @@ export const register: Register = (on, options) => {
           <Text bold>{ad.brand}</Text>
           <Text>: {ad.headline}</Text>
           {body ? <Text dimColor> {body}</Text> : null}
-          <Text> </Text>
-          <Link href={ad.clickUrl} label={ad.cta || 'Learn more'} />
           <Text>  </Text>
           <Button
             key="open"
-            label="open"
+            label={ad.cta || 'Learn more'}
             hotkey="1"
             plain
-            dimColor
             onPress={() => openInBrowser($, ad.clickUrl)}
           />
           <Text> </Text>

@@ -118,7 +118,7 @@ test('nothing is drawn before a turn', async ($, on) => {
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'goodwait', surface, ...BAND })
-    expect(await ui.find({ type: 'Link' })).toBeUndefined()
+    expect(await ui.find({ key: 'open' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -145,8 +145,8 @@ test('the line shows during a turn, counts after one second, clears after the li
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'goodwait', surface, ...BAND })
-    const link = await ui.find({ type: 'Link' })
-    expect(link?.props.href).toBe(AD_RESPONSE.ad.clickUrl)
+    expect(await ui.find({ type: 'Link' })).toBeUndefined() // no raw redirect URL on the band
+    expect((await ui.find({ key: 'open' }))?.props.label).toBe('Learn more')
     expect(await ui.find({ type: 'Text', text: /Khan Academy/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /50% of net ad revenue goes to Khan Academy/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /test mode, nothing counted/ })).toBeDefined()
@@ -166,14 +166,14 @@ test('the line shows during a turn, counts after one second, clears after the li
   await $.turn.complete({ answer: 'done', durationMs: 5000, isAborted: false, turnId: 't1', reason: 'answer' })
   {
     const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Link' })).toBeDefined()
+    expect(await ui.find({ key: 'open' })).toBeDefined()
     await ui.unmount()
   }
   await clock.advance(4000)
   await clock.settle()
   {
     const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Link' })).toBeUndefined()
+    expect(await ui.find({ key: 'open' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -191,7 +191,7 @@ test('an ad that arrives after the reply is never shown', async ($, on) => {
   await clock.advance(0)
   await clock.settle()
   const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect(await ui.find({ key: 'open' })).toBeUndefined()
   await ui.unmount()
   await clock.advance(1000)
   await clock.settle()
@@ -210,9 +210,9 @@ test('hide persists across sessions and /goodwait on brings it back', async ($, 
   await clock.settle()
 
   const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Link' })).toBeDefined()
+  expect(await ui.find({ key: 'open' })).toBeDefined()
   await ui.press({ key: 'hide' })
-  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect(await ui.find({ key: 'open' })).toBeUndefined()
   await ui.unmount()
 
   // Hidden survives a restart: the store remembers it.
@@ -224,7 +224,7 @@ test('hide persists across sessions and /goodwait on brings it back', async ($, 
   expect(adCalls).toBe(1) // no second ad request while hidden
   {
     const ui2 = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-    expect(await ui2.find({ type: 'Link' })).toBeUndefined()
+    expect(await ui2.find({ key: 'open' })).toBeUndefined()
     await ui2.unmount()
   }
 
@@ -243,12 +243,12 @@ test('status line carries the public counter from session start, and clears when
   await clock.advance(0)
   await clock.settle()
   expect(s.fetched.some(f => f.url.includes('/stats?site=claude-code'))).toBe(true)
-  expect(s.status.at(-1)).toBe('Goodwait · 1,234 waits · 50% to Khan Academy')
+  expect(s.status.at(-1)).toBe('1,234 waits · 50% to Khan Academy')
 
   await $.command.run({ command: 'goodwait', args: 'off', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
   expect(s.status.at(-1)).toBeUndefined()
   await $.command.run({ command: 'goodwait', args: 'on', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
-  expect(s.status.at(-1)).toBe('Goodwait · 1,234 waits · 50% to Khan Academy')
+  expect(s.status.at(-1)).toBe('1,234 waits · 50% to Khan Academy')
 })
 
 test('the band shows the body line only when wide, and "open" goes through the click redirect on the host', async ($, on) => {
@@ -275,7 +275,7 @@ test('the band shows the body line only when wide, and "open" goes through the c
 
   // Narrow (80 columns): headline and link only, no body.
   const narrow = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND.props, bodyColumns: 80 } })
-  expect(await narrow.find({ type: 'Link' })).toBeDefined()
+  expect(await narrow.find({ key: 'open' })).toBeDefined()
   expect(await narrow.find({ type: 'Text', text: /Free courses in math/ })).toBeUndefined()
   await narrow.unmount()
 })
@@ -325,7 +325,7 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
     await ui.press({ key: 'toggle' })
     expect(s.status.at(-1)).toBeUndefined() // turned off from the pane
     await ui.press({ key: 'toggle' })
-    expect(s.status.at(-1)).toMatch(/^Goodwait · 1,234 waits/)
+    expect(s.status.at(-1)).toMatch(/^1,234 waits/)
     await ui.press({ key: 'site' })
     expect(s.runs.at(-1)).toEqual(['open', 'https://goodwait.vercel.app/?ref=claude-code'])
     await ui.unmount()
