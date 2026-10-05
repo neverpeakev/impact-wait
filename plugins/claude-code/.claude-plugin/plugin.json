@@ -1,7 +1,7 @@
 {
   "name": "goodwait",
-  "version": "0.2.0",
-  "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, the public counter in the status line and a /goodwait pane; half of the net ad revenue goes to Khan Academy.",
+  "version": "0.3.0",
+  "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, your estimated earnings in the status line and a /goodwait pane.",
   "types": "./types/index.d.ts",
   "userConfig": {
     "site": {
@@ -15,6 +15,12 @@
       "description": "Goodwait API base URL.",
       "default": "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait",
       "title": "API endpoint"
+    },
+    "ecpm": {
+      "type": "number",
+      "title": "Estimated eCPM (USD)",
+      "description": "Your estimated earnings per 1,000 counted paid waits. Default 24.50 = Idlen's published $35 network average for sponsored recommendations x the 70% publisher share. Idlen's dashboard is the exact figure.",
+      "default": 24.5
     }
   },
   "author": {

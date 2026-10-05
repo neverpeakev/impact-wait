@@ -45,6 +45,7 @@ declare module 'claude-code' {
       current: GoodwaitCurrent | null
       isHidden: boolean
       sessionWaits: number
+      sessionPaid: number
       stats: GoodwaitStats | null
     }
   }

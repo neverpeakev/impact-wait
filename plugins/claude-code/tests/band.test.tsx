@@ -6,11 +6,11 @@ const AD_ID = '11111111-1111-4111-8111-111111111111'
 const AD_RESPONSE = {
   id: AD_ID,
   ad: {
-    provider: 'house',
+    provider: 'idlen',
     sponsored: true,
     label: 'Sponsored',
-    brand: 'Khan Academy',
-    headline: 'Free, world-class education for anyone, anywhere.',
+    brand: 'Fuel Path Pro',
+    headline: 'Plan every road trip in one tap.',
     body: 'Free courses in math, science and more.',
     cta: 'Learn more',
     clickUrl: `https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait/click?id=${AD_ID}`,
@@ -26,7 +26,7 @@ const AD_RESPONSE = {
     donated_updated_at: null,
     sponsored_waits: 1234,
   },
-  sandbox: true,
+  sandbox: false,
 }
 
 const BAND = {
@@ -53,7 +53,7 @@ const seen = (): Seen => ({ fetched: [], status: [], toasts: [], runs: [], opene
 
 const STATS = {
   total: { sponsored_waits: 1234, paid_waits: 900, clicks: 12, sites: 3 },
-  site: { site_key: 'claude-code', name: null, sponsored_waits: 40, paid_waits: 30, clicks: 2 },
+  site: { site_key: 'claude-code', name: null, sponsored_waits: 40, paid_waits: 40, clicks: 2 },
   leaderboard: [
     { site_key: 'riverside-library', name: 'Riverside Library', sponsored_waits: 800 },
     { site_key: 'claude-code', name: null, sponsored_waits: 40 },
@@ -105,7 +105,7 @@ function bottom(on: On, s: Seen) {
     s.fetched.push({ url: e.url, body: e.init?.body })
     const ok = (text: string) => ({ value: { status: 200, ok: true, headers: {}, text } })
     if (e.url.endsWith('/ad')) return ok(JSON.stringify(AD_RESPONSE))
-    if (e.url.endsWith('/event')) return ok('{"ok":true,"counted":false,"sandbox":true}')
+    if (e.url.endsWith('/event')) return ok('{"ok":true,"counted":true}')
     if (e.url.includes('/stats')) return ok(JSON.stringify(STATS))
     return { value: { status: 404, ok: false, headers: {}, text: '' } }
   })
@@ -147,9 +147,9 @@ test('the line shows during a turn, counts after one second, clears after the li
     const ui = await $.ui.mount({ plugin: 'goodwait', surface, ...BAND })
     expect(await ui.find({ type: 'Link' })).toBeUndefined() // no raw redirect URL on the band
     expect((await ui.find({ key: 'open' }))?.props.label).toBe('Learn more')
-    expect(await ui.find({ type: 'Text', text: /Khan Academy/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /50% of net ad revenue goes to Khan Academy/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /test mode, nothing counted/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Fuel Path Pro/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /est. earned \$0\.00 this session · \$0\.98 lifetime · 1,234 waits so far/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Khan Academy/ })).toBeUndefined() // no cause line on the band
     expect(await ui.find({ key: 'hide' })).toBeDefined()
     await ui.unmount()
   }
@@ -243,12 +243,12 @@ test('status line carries the public counter from session start, and clears when
   await clock.advance(0)
   await clock.settle()
   expect(s.fetched.some(f => f.url.includes('/stats?site=claude-code'))).toBe(true)
-  expect(s.status.at(-1)).toBe('1,234 waits · 50% to Khan Academy')
+  expect(s.status.at(-1)).toBe('1,234 waits · est. $0.98 earned')
 
   await $.command.run({ command: 'goodwait', args: 'off', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
   expect(s.status.at(-1)).toBeUndefined()
   await $.command.run({ command: 'goodwait', args: 'on', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
-  expect(s.status.at(-1)).toBe('1,234 waits · 50% to Khan Academy')
+  expect(s.status.at(-1)).toBe('1,234 waits · est. $0.98 earned')
 })
 
 test('the band shows the body line only when wide, and "open" goes through the click redirect on the host', async ($, on) => {
@@ -299,7 +299,7 @@ test('a toast marks the 10th wait of the session', async ($, on) => {
   }
   const events = s.fetched.filter(f => f.url.endsWith('/event')).length
   expect(events).toBe(10)
-  expect(s.toasts.some(t => t.startsWith('Your waits this session: 10'))).toBe(true)
+  expect(s.toasts.some(t => t === 'Your waits this session: 10 · est. $0.25 earned')).toBe(true)
   expect(s.toasts.some(t => t.startsWith('Your waits this session: 9'))).toBe(false)
 })
 
@@ -317,10 +317,13 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'goodwait', surface, ...PANE })
+    expect(await ui.find({ type: 'Text', text: /^\$0\.98$/ })).toBeDefined() // 40 paid waits x $24.50 eCPM
+    expect(await ui.find({ type: 'Text', text: /est. lifetime earnings/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /est. this session/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1,234$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Riverside Library/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /your waits this session/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /40 waits, 2 clicks from this site/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\$24\.50 eCPM/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /pledged to Khan Academy: about \$0\.49/ })).toBeDefined()
     expect(await ui.find({ key: 'refresh' })).toBeDefined()
     await ui.press({ key: 'toggle' })
     expect(s.status.at(-1)).toBeUndefined() // turned off from the pane

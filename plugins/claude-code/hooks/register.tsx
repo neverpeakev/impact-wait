@@ -9,10 +9,14 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitImpact, GoodwaitStats } from 
 // goes to Khan Academy; every counted wait adds to the public counter at
 // https://goodwait.vercel.app.
 //
-// Beyond the line: the status line carries the running counter, /goodwait
-// opens a pane with the leaderboard, pressing the ad opens it in the browser
-// through the server's click redirect (so clicks count), and a toast marks
-// the 10th, 50th and 100th wait of a session.
+// Beyond the line: the status line carries the counter and estimated
+// earnings, /goodwait opens a pane with earnings and the leaderboard, pressing
+// the ad opens it in the browser through the server's click redirect (so
+// clicks count), and a toast marks the 10th, 50th and 100th wait of a session.
+//
+// Earnings are estimates: counted paid waits x the eCPM in settings. The
+// default is Idlen's published network average for this format ($35 CPM) times
+// the publisher's 70% share. Idlen's dashboard is the exact balance.
 //
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
@@ -37,9 +41,10 @@ const WIDE_COLUMNS = 110
 const current = atom({ plugin: 'goodwait', key: 'current' } as const, null)
 const isHidden = atom({ plugin: 'goodwait', key: 'isHidden' } as const, false)
 const sessionWaits = atom({ plugin: 'goodwait', key: 'sessionWaits' } as const, 0)
+const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
 
-type Config = { site: string; endpoint: string }
+type Config = { site: string; endpoint: string; ecpm: number }
 
 // Module state. A hot reload starts it over, which is fine: it only tracks
 // the turn in flight and the timers that belong to it.
@@ -55,6 +60,11 @@ function money(n: number): string {
 
 function num(n: number): string {
   return n.toLocaleString('en-US')
+}
+
+// Estimated publisher earnings for `paidWaits` counted paid impressions.
+function earned(paidWaits: number, ecpm: number): number {
+  return (paidWaits / 1000) * ecpm
 }
 
 // Background work that nobody awaits. A write after the module was unloaded
@@ -94,7 +104,7 @@ async function fetchStats($: EngineInterface, cfg: Config): Promise<GoodwaitStat
 }
 
 // The status line: the public counter, always visible while the mod is on.
-async function paintStatus($: EngineInterface) {
+async function paintStatus($: EngineInterface, cfg: Config) {
   if (await read($, isHidden)) {
     $.ui.status(undefined)
     return
@@ -104,14 +114,13 @@ async function paintStatus($: EngineInterface) {
     $.ui.status('counting waits')
     return
   }
-  const cause = st.impact.cause_name || 'a good cause'
-  const given = st.impact.donated_usd > 0 ? ` · ${money(st.impact.donated_usd)} to ${cause}` : ` · ${st.impact.pledge_pct ?? 50}% to ${cause}`
-  $.ui.status(`${num(st.total.sponsored_waits)} waits${given}`)
+  const mine = st.site ? st.site.paid_waits : 0
+  $.ui.status(`${num(st.total.sponsored_waits)} waits · est. ${money(earned(mine, cfg.ecpm))} earned`)
 }
 
 async function refreshStats($: EngineInterface, cfg: Config) {
   await fetchStats($, cfg)
-  await paintStatus($)
+  await paintStatus($, cfg)
 }
 
 // ------------------------------------------------------------------ ads
@@ -119,18 +128,28 @@ async function refreshStats($: EngineInterface, cfg: Config) {
 async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   const shown = await read($, current)
   if (!shown || shown.id !== id || (await read($, isHidden))) return
+  let counted = false
   try {
-    await postJson($, `${cfg.endpoint}/event`, { id, type: 'impression' })
+    const r = await postJson($, `${cfg.endpoint}/event`, { id, type: 'impression' })
+    try {
+      counted = r.ok && JSON.parse(r.text).counted === true
+    } catch {
+      counted = false
+    }
   } catch {
     return
   }
   await update($, current, c => (c && c.id === id ? { ...c, impressed: true } : c))
   const n = (await read($, sessionWaits)) + 1
   await update($, sessionWaits, () => n)
+  // A paid wait: the server counted it and a network (not the house) filled it.
+  let paid = await read($, sessionPaid)
+  if (counted && shown.ad.provider !== 'house') {
+    paid += 1
+    await update($, sessionPaid, () => paid)
+  }
   if (MILESTONES.includes(n)) {
-    const st = await read($, stats)
-    const cause = st?.impact.cause_name || 'a good cause'
-    $.ui.toast(`Your waits this session: ${n} · ${st?.impact.pledge_pct ?? 50}% of net ad revenue goes to ${cause}`, { timeoutMs: 6000 })
+    $.ui.toast(`Your waits this session: ${n} · est. ${money(earned(paid, cfg.ecpm))} earned`, { timeoutMs: 6000 })
   }
   // The public number moved; show it.
   fire(refreshStats($, cfg))
@@ -176,10 +195,10 @@ async function clearIfTurn($: EngineInterface, turnId: string) {
   await update($, current, c => (c && c.turnId === turnId ? null : c))
 }
 
-async function setHidden($: EngineInterface, hidden: boolean) {
+async function setHidden($: EngineInterface, cfg: Config, hidden: boolean) {
   await update($, isHidden, () => hidden)
   await $.store.set(HIDDEN_KEY, hidden)
-  await paintStatus($)
+  await paintStatus($, cfg)
 }
 
 // Opens a URL in the person's browser through the host. The ad's URL is the
@@ -204,6 +223,7 @@ export const register: Register = (on, options) => {
   const cfg: Config = {
     site: SITE_RE.test(rawSite) ? rawSite : 'sandbox',
     endpoint: String(options.endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, ''),
+    ecpm: Number.isFinite(Number(options.ecpm)) && Number(options.ecpm) >= 0 ? Number(options.ecpm) : 24.5,
   }
 
   on('session.start', async ($, e, next) => {
@@ -211,6 +231,7 @@ export const register: Register = (on, options) => {
     const hidden = (await $.store.get(HIDDEN_KEY)) === true
     await update($, isHidden, () => hidden)
     await update($, sessionWaits, () => 0)
+    await update($, sessionPaid, () => 0)
     await $.command.register({
       name: 'goodwait',
       description: 'Goodwait: open the counter pane, or turn the sponsored line on or off.',
@@ -259,9 +280,9 @@ export const register: Register = (on, options) => {
     const { Box, Text, Link, Button } = $.ui.resolve(e)
     const { ad, impact } = shown
     const wide = e.props.bodyColumns >= WIDE_COLUMNS
-    const pledge = impact.pledge_pct === null ? 'Part' : `${impact.pledge_pct}%`
-    const cause = impact.cause_name || 'a good cause'
-    const funded = impact.donated_usd > 0 ? ` · ${money(impact.donated_usd)} donated` : ''
+    const st = await read($, stats)
+    const paidNow = await read($, sessionPaid)
+    const lifetime = st?.site ? st.site.paid_waits : 0
     const mode = shown.sandbox ? ' · test mode, nothing counted' : ''
     const body = wide && ad.body && ad.body !== ad.headline ? ad.body : ''
 
@@ -297,14 +318,13 @@ export const register: Register = (on, options) => {
             plain
             dimColor
             onPress={async () => {
-              await setHidden($, true)
+              await setHidden($, cfg, true)
               $.ui.toast('Goodwait hidden. /goodwait on brings it back.')
             }}
           />
         </Box>
         <Text dimColor wrap="truncate-end">
-          {pledge} of net ad revenue goes to {cause}
-          {funded} · {num(impact.sponsored_waits)} waits so far{mode}
+          est. earned {money(earned(paidNow, cfg.ecpm))} this session · {money(earned(lifetime, cfg.ecpm))} lifetime · {num(impact.sponsored_waits)} waits so far{mode}
         </Text>
       </Box>
     )
@@ -327,32 +347,55 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const cause = st.impact.cause_name || 'a good cause'
+    const paidNow = await read($, sessionPaid)
+    const lifetimePaid = st.site ? st.site.paid_waits : 0
+    const lifetimeEarned = earned(lifetimePaid, cfg.ecpm)
+    const pledgePct = st.impact.pledge_pct ?? 50
+    const cause = st.impact.cause_name || 'the cause'
     const leaders = st.leaderboard.slice(0, 10)
     const nameWidth = Math.min(28, Math.max(10, ...leaders.map(l => (l.name || l.site_key).length)))
+    const col = Math.floor(width / 3)
 
     return (
       <Box flexDirection="column">
-        <Text bold>Goodwait · every AI wait can do some good</Text>
+        <Text bold>Goodwait · your earnings</Text>
         <Text> </Text>
         <Box flexDirection="row">
-          <Box flexDirection="column" width={Math.floor(width / 3)}>
-            <Text bold>{num(st.total.sponsored_waits)}</Text>
-            <Text dimColor>sponsored waits</Text>
+          <Box flexDirection="column" width={col}>
+            <Text bold>{money(lifetimeEarned)}</Text>
+            <Text dimColor>est. lifetime earnings</Text>
           </Box>
-          <Box flexDirection="column" width={Math.floor(width / 3)}>
-            <Text bold>{money(st.impact.donated_usd)}</Text>
-            <Text dimColor>donated to {cause}</Text>
+          <Box flexDirection="column" width={col}>
+            <Text bold>{money(earned(paidNow, cfg.ecpm))}</Text>
+            <Text dimColor>est. this session</Text>
           </Box>
-          <Box flexDirection="column" width={Math.floor(width / 3)}>
-            <Text bold>{num(mine)}</Text>
-            <Text dimColor>your waits this session</Text>
+          <Box flexDirection="column" width={col}>
+            <Text bold>{num(lifetimePaid)}</Text>
+            <Text dimColor>paid waits lifetime ({num(mine)} this session)</Text>
           </Box>
         </Box>
         <Text> </Text>
-        <Text dimColor>
-          {st.impact.pledge_pct ?? 50}% of net ad revenue goes to {cause}. Every donation is published with its receipt.
+        <Text dimColor wrap="wrap">
+          Estimates: paid waits x {money(cfg.ecpm)} eCPM (Idlen's published $35 network average for this format x your 70% share). Change the eCPM in /config. Idlen pays monthly once you pass $50; its dashboard is the exact balance.
         </Text>
+        <Text dimColor>
+          {pledgePct}% of net is pledged to {cause}: about {money(lifetimeEarned * (pledgePct / 100))} so far.
+        </Text>
+        <Text> </Text>
+        <Box flexDirection="row">
+          <Box flexDirection="column" width={col}>
+            <Text bold>{num(st.total.sponsored_waits)}</Text>
+            <Text dimColor>waits across all sites</Text>
+          </Box>
+          <Box flexDirection="column" width={col}>
+            <Text bold>{st.site ? num(st.site.sponsored_waits) : '0'}</Text>
+            <Text dimColor>waits from {cfg.site}</Text>
+          </Box>
+          <Box flexDirection="column" width={col}>
+            <Text bold>{st.site ? num(st.site.clicks) : '0'}</Text>
+            <Text dimColor>clicks from {cfg.site}</Text>
+          </Box>
+        </Box>
         <Text> </Text>
         <Text bold>Leaderboard</Text>
         {leaders.length === 0 ? <Text dimColor>No counted waits yet. Yours will be the first.</Text> : null}
@@ -367,7 +410,6 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           Site key: {cfg.site}
           {cfg.site === 'sandbox' ? ' (test mode, nothing counted)' : ''}
-          {st.site ? ` · ${num(st.site.sponsored_waits)} waits, ${num(st.site.clicks)} clicks from this site` : ''}
         </Text>
         <Text> </Text>
         <Box flexDirection="row">
@@ -377,7 +419,7 @@ export const register: Register = (on, options) => {
             key="toggle"
             label={hidden ? 'Turn on' : 'Turn off'}
             hotkey="t"
-            onPress={() => setHidden($, !hidden)}
+            onPress={() => setHidden($, cfg, !hidden)}
           />
           <Text> </Text>
           <Button key="site" label="Open counter page" hotkey="o" onPress={() => openInBrowser($, `${HOME}/?ref=${encodeURIComponent(cfg.site)}`)} />
@@ -393,11 +435,11 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'goodwait' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
     if (arg === 'off') {
-      await setHidden($, true)
+      await setHidden($, cfg, true)
       return { text: 'Goodwait is off. /goodwait on turns it back on.' }
     }
     if (arg === 'on') {
-      await setHidden($, false)
+      await setHidden($, cfg, false)
       return { text: `Goodwait is on (site: ${cfg.site}). The sponsored line shows while Claude works.` }
     }
     fire(refreshStats($, cfg))
@@ -405,7 +447,7 @@ export const register: Register = (on, options) => {
     if (opened.isPlaced) return { text: 'Goodwait counter opened.' }
     const st = (await read($, stats)) ?? (await fetchStats($, cfg))
     const line = st
-      ? `${num(st.total.sponsored_waits)} sponsored waits · ${money(st.impact.donated_usd)} to ${st.impact.cause_name} · ${HOME}`
+      ? `${num(st.total.sponsored_waits)} waits · est. ${money(earned(st.site ? st.site.paid_waits : 0, cfg.ecpm))} earned lifetime · ${HOME}`
       : `Counter: ${HOME}`
     return { text: `Goodwait · site ${cfg.site} · ${line}` }
   })
