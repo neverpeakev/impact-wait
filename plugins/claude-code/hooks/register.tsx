@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { GoodwaitAd, GoodwaitCurrent, GoodwaitImpact, GoodwaitStats } from '../types'
+import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitImpact, GoodwaitStats } from '../types'
 
 // Goodwait for Claude Code.
 // While a turn runs, one labeled sponsored line sits above the prompt. It
@@ -20,6 +20,12 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitImpact, GoodwaitStats } from 
 // an estimate: counted paid waits x the eCPM in settings (default: Idlen's
 // published $35 network-average CPM for this format x the 70% publisher share).
 //
+// Earning: on first run the mod signs this install up as an earner and keeps
+// the earner token in the plugin store. Paid views the API credits to that
+// token earn the person a share of the ad revenue, settled monthly from what
+// the network actually paid. /earn shows the balance; /earn paypal <email>
+// sets where payouts go.
+//
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
 // matching line. Nothing else. The site key defaults to "claude-code" (the
@@ -37,6 +43,9 @@ const STATS_REFRESH_MS = 5 * 60 * 1000
 const HIDDEN_KEY = 'goodwait.hidden'
 const PANE = 'goodwait'
 const MILESTONES = [10, 50, 100, 250, 500, 1000]
+const EARNER_KEY = 'goodwait.earner'
+const TOKEN_RE = /^gw_[0-9a-f]{64}$/
+const EARN_REF = 'claude-code-mod'
 // The band shows the ad's body line only when there is room for it.
 const WIDE_COLUMNS = 110
 
@@ -45,6 +54,7 @@ const isHidden = atom({ plugin: 'goodwait', key: 'isHidden' } as const, false)
 const sessionWaits = atom({ plugin: 'goodwait', key: 'sessionWaits' } as const, 0)
 const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
+const earner = atom({ plugin: 'goodwait', key: 'earner' } as const, null)
 
 type Config = { site: string; endpoint: string; ecpm: number }
 
@@ -55,6 +65,8 @@ let sessionId = ''
 let clearTimer: Timer | null = null
 let impressionTimer: Timer | null = null
 let statsTimer: Timer | null = null
+// This install's earner token, loaded from the plugin store at session start.
+let earnerToken = ''
 
 function money(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -145,16 +157,98 @@ async function refreshStats($: EngineInterface, cfg: Config) {
   await paintStatus($, cfg)
 }
 
+// --------------------------------------------------------------- earner
+
+// Signs this install up once, then reuses the stored token for good.
+async function ensureEarner($: EngineInterface, cfg: Config) {
+  const saved = (await $.store.get(EARNER_KEY)) as { id?: string; token?: string } | undefined
+  if (saved && typeof saved.token === 'string' && TOKEN_RE.test(saved.token)) {
+    earnerToken = saved.token
+  } else {
+    let res
+    try {
+      res = await postJson($, `${cfg.endpoint}/earner`, { ref: EARN_REF })
+    } catch {
+      return
+    }
+    if (res.status !== 201) return
+    let j: { earner_id?: string; token?: string; share_pct?: number }
+    try {
+      j = JSON.parse(res.text)
+    } catch {
+      return
+    }
+    if (!j.token || !TOKEN_RE.test(j.token)) return
+    earnerToken = j.token
+    await $.store.set(EARNER_KEY, { id: j.earner_id, token: j.token })
+    $.ui.toast(`You now earn ${j.share_pct ?? 50}% of the ad revenue from your waits. /earn to see it.`, { timeoutMs: 8000 })
+  }
+  await fetchEarner($, cfg)
+}
+
+async function fetchEarner($: EngineInterface, cfg: Config): Promise<GoodwaitEarner | null> {
+  if (!earnerToken) return null
+  let res
+  try {
+    res = await $.http.fetch(`${cfg.endpoint}/earner/me`, { headers: { authorization: `Bearer ${earnerToken}` } })
+  } catch {
+    return null
+  }
+  if (!res.ok) return null
+  let j: Omit<GoodwaitEarner, 'fetchedAt'>
+  try {
+    j = JSON.parse(res.text)
+  } catch {
+    return null
+  }
+  if (!j || typeof j.earner_id !== 'string' || !j.program) return null
+  const full: GoodwaitEarner = { ...j, fetchedAt: await $.clock.now() }
+  await update($, earner, () => full)
+  return full
+}
+
+function earnerLine(e: GoodwaitEarner): string {
+  const est = e.est_pending_usd !== null && e.est_pending_usd > 0 ? ` (est. ${money(e.est_pending_usd)})` : ''
+  return `You: ${num(e.credited_today)} paid views today · ${num(e.pending_waits)} pending${est} · ${money(e.owed_usd)} owed`
+}
+
+async function setPayout($: EngineInterface, cfg: Config, email: string): Promise<string> {
+  if (!earnerToken) return 'Earning is not set up on this install yet. Try again in a minute.'
+  let res
+  try {
+    res = await $.http.fetch(`${cfg.endpoint}/earner/payout`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${earnerToken}` },
+      body: JSON.stringify({ email }),
+    })
+  } catch {
+    return 'Could not reach the server. Try again in a minute.'
+  }
+  if (res.status === 400) return 'That does not look like an email address. Use: /earn paypal you@example.com'
+  if (!res.ok) return 'Could not save it. Try again in a minute.'
+  fire(fetchEarner($, cfg))
+  let masked = email
+  try {
+    masked = JSON.parse(res.text).payout_email || email
+  } catch {
+    // keep what they typed
+  }
+  return `Payouts go to PayPal ${masked}.`
+}
+
 // ------------------------------------------------------------------ ads
 
 async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   const shown = await read($, current)
   if (!shown || shown.id !== id || (await read($, isHidden))) return
   let counted = false
+  let credited = false
   try {
     const r = await postJson($, `${cfg.endpoint}/event`, { id, type: 'impression' })
     try {
-      counted = r.ok && JSON.parse(r.text).counted === true
+      const j = JSON.parse(r.text)
+      counted = r.ok && j.counted === true
+      credited = r.ok && j.credited === true
     } catch {
       counted = false
     }
@@ -175,6 +269,7 @@ async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   }
   // The public number moved; show it.
   fire(refreshStats($, cfg))
+  if (credited) fire(fetchEarner($, cfg))
 }
 
 async function fetchAd($: EngineInterface, cfg: Config, turnId: string, text: string) {
@@ -183,7 +278,7 @@ async function fetchAd($: EngineInterface, cfg: Config, turnId: string, text: st
   if (!query) return
   let res
   try {
-    res = await postJson($, `${cfg.endpoint}/ad`, { site: cfg.site, query, sessionId })
+    res = await postJson($, `${cfg.endpoint}/ad`, { site: cfg.site, query, sessionId, ...(earnerToken ? { earner: earnerToken } : {}) })
   } catch {
     return // offline or refused: show nothing, never block the turn
   }
@@ -259,6 +354,15 @@ export const register: Register = (on, options) => {
       description: 'Goodwait: open the counter pane, or turn the sponsored line on or off.',
       argumentHint: '[on|off]',
     })
+    await $.command.register({
+      name: 'earn',
+      description: 'Your share of the ad revenue: see your balance, or set your PayPal for payouts.',
+      argumentHint: '[paypal you@example.com]',
+    })
+    earnerToken = ''
+    $.clock.after(0, () => {
+      fire(ensureEarner($, cfg))
+    })
     // Counter in the status line, refreshed every few minutes. Off the dispatch.
     statsTimer?.cancel()
     $.clock.after(0, () => {
@@ -306,6 +410,7 @@ export const register: Register = (on, options) => {
     const paidNow = await read($, sessionPaid)
     const life = lifetime(st, cfg.ecpm)
     const lifeLabel = life.isActual ? `${money(life.usd)} lifetime (actual as of ${shortDate(life.asOf)})` : `est. ${money(life.usd)} lifetime`
+    const me = await read($, earner)
     const mode = shown.sandbox ? ' · test mode, nothing counted' : ''
     const body = wide && ad.body && ad.body !== ad.headline ? ad.body : ''
 
@@ -347,7 +452,7 @@ export const register: Register = (on, options) => {
           />
         </Box>
         <Text dimColor wrap="truncate-end">
-          {lifeLabel} · est. {money(earned(paidNow, cfg.ecpm))} this session · {num(impact.sponsored_waits)} waits so far{mode}
+          {me ? earnerLine(me) : `${lifeLabel} · est. ${money(earned(paidNow, cfg.ecpm))} this session`} · {num(impact.sponsored_waits)} waits so far{mode}
         </Text>
       </Box>
     )
@@ -380,8 +485,38 @@ export const register: Register = (on, options) => {
     const nameWidth = Math.min(28, Math.max(10, ...leaders.map(l => (l.name || l.site_key).length)))
     const col = Math.floor(width / 3)
 
+    const me = await read($, earner)
+
     return (
       <Box flexDirection="column">
+        {me ? (
+          <Box flexDirection="column">
+            <Text bold>You earn {me.program.share_pct}% of the ad revenue from your waits</Text>
+            <Text> </Text>
+            <Box flexDirection="row">
+              <Box flexDirection="column" width={col}>
+                <Text bold>{money(me.owed_usd)}</Text>
+                <Text dimColor>owed to you</Text>
+              </Box>
+              <Box flexDirection="column" width={col}>
+                <Text bold>{num(me.pending_waits)}</Text>
+                <Text dimColor>paid views waiting to settle{me.est_pending_usd !== null ? ` (est. ${money(me.est_pending_usd)})` : ''}</Text>
+              </Box>
+              <Box flexDirection="column" width={col}>
+                <Text bold>{money(me.paid_usd)}</Text>
+                <Text dimColor>paid out so far</Text>
+              </Box>
+            </Box>
+            <Text dimColor>
+              {num(me.credited_today)} of {num(me.program.daily_cap)} paid views today · {num(me.credited_total)} lifetime
+            </Text>
+            <Text dimColor wrap="wrap">
+              Views settle monthly from what the ad network actually paid. Payouts go out once you are owed {money(me.program.min_payout_usd)}.
+            </Text>
+            <Text>{me.payout_email ? `Payouts go to PayPal ${me.payout_email}.` : 'Set your PayPal to get paid: /earn paypal you@example.com'}</Text>
+            <Text> </Text>
+          </Box>
+        ) : null}
         <Text bold>Goodwait · your earnings</Text>
         <Text> </Text>
         <Box flexDirection="row">
@@ -460,6 +595,18 @@ export const register: Register = (on, options) => {
         <Link href={HOME} label={HOME} />
       </Box>
     )
+  })
+
+  on('command.run', { command: 'earn' }, async ($, e) => {
+    const m = e.args.trim().match(/^paypal\s+(\S+)$/i)
+    if (m?.[1]) return { text: await setPayout($, cfg, m[1].toLowerCase()) }
+    if (e.args.trim()) return { text: 'Use /earn to see your balance, or /earn paypal you@example.com to set where payouts go.' }
+    const me = (await fetchEarner($, cfg)) ?? (await read($, earner))
+    fire(refreshStats($, cfg))
+    await $.ui.open({ id: PANE, title: 'Goodwait' })
+    if (!me) return { text: 'Earning is not set up on this install yet. Try again in a minute.' }
+    const payout = me.payout_email ? `PayPal ${me.payout_email}` : 'no PayPal set (/earn paypal you@example.com)'
+    return { text: `${earnerLine(me)} · ${money(me.paid_usd)} paid out · ${payout}` }
   })
 
   on('command.run', { command: 'goodwait' }, async ($, e) => {

@@ -16,6 +16,18 @@ Around it:
 - **Earnings pane**: `/goodwait` opens a pane with your estimated lifetime and session earnings, paid waits, the public total, the leaderboard and this site's waits and clicks. Keys: `r` refresh, `t` turn the line off or on, `o` open the counter page.
 - **Milestones**: a toast at your 10th, 50th, 100th, 250th, 500th and 1,000th wait of a session.
 
+## Earn a share of the ad revenue
+
+On first run the mod signs this install up as an earner (no account, no email needed) and keeps a private earner token in the plugin store. Every paid view the API credits to that token earns you a share of the ad revenue (50% by default).
+
+- `/earn` shows your balance: paid views today and pending, what you are owed, and what has been paid out.
+- `/earn paypal you@example.com` sets where payouts go.
+- Views settle monthly from what the ad network **actually paid** for the period, split by credited views. Nothing is owed from estimates.
+- Payouts go out once you are owed $10.
+- Limits: at most 200 credited views a day and one every 20 seconds. Fake or scripted views get the earner banned and forfeit what is owed.
+
+Keep your earner token private: it is your balance. It lives in the plugin store on this machine; reinstalling on a new machine starts a new earner.
+
 ## Install
 
 ```bash
@@ -46,7 +58,7 @@ Commands: `/goodwait` opens the counter pane, `/goodwait off` and `/goodwait on`
 
 ## What leaves your machine
 
-The first 500 characters of your prompt, the site key and a random per-session id, sent to the Goodwait API to pick one matching line. No files, no tool output, no account details.
+The first 500 characters of your prompt, the site key, a random per-session id and your earner token, sent to the Goodwait API to pick one matching line and credit your view. The API passes the prompt text on to the ad network to match the ad. No files, no tool output, no code beyond what you typed in the prompt. Your PayPal email is stored only for payouts and shown back to you masked.
 
 ## Development
 

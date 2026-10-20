@@ -51,6 +51,21 @@ export type GoodwaitStats = {
   fetchedAt: number
 }
 
+// This install's own earnings, from GET /earner/me. Money is owed only from settled network revenue.
+export type GoodwaitEarner = {
+  earner_id: string
+  status: string
+  credited_total: number
+  credited_today: number
+  pending_waits: number
+  owed_usd: number
+  paid_usd: number
+  payout_email: string | null
+  est_pending_usd: number | null
+  program: { share_pct: number; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; est_ecpm_usd: number | null }
+  fetchedAt: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'goodwait': {
@@ -59,6 +74,7 @@ declare module 'claude-code' {
       sessionWaits: number
       sessionPaid: number
       stats: GoodwaitStats | null
+      earner: GoodwaitEarner | null
     }
   }
 }

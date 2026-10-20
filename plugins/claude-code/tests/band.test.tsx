@@ -97,7 +97,7 @@ function bottom(on: On, s: Seen) {
   on('ui.close', () => ({ value: undefined }))
   on('process.run', ($, e) => {
     s.runs.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)

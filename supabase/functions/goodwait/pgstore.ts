@@ -1,6 +1,6 @@
 // Postgres-backed Store. Tables live in the private impact_wait schema (not exposed via the REST API).
 import postgres from "npm:postgres@3.4.5";
-import type { AdRow, Impact, Store } from "./app.ts";
+import type { AdRow, EarnerSummary, Impact, Program, Store } from "./app.ts";
 
 export function pgStore(dbUrl: string): Store {
   const sql = postgres(dbUrl, { max: 3, prepare: false, idle_timeout: 20 });
@@ -16,8 +16,8 @@ export function pgStore(dbUrl: string): Store {
       return r.n;
     },
     async insertAd(row) {
-      const [r] = await sql`insert into impact_wait.ads (site_key, provider, live, tracking, click_url, ip_hash, origin)
-        values (${row.site_key}, ${row.provider}, ${row.live}, ${sql.json(row.tracking as any)}, ${row.click_url || null}, ${row.ip_hash}, ${row.origin || null}) returning id`;
+      const [r] = await sql`insert into impact_wait.ads (site_key, provider, live, tracking, click_url, ip_hash, origin, earner_id)
+        values (${row.site_key}, ${row.provider}, ${row.live}, ${sql.json(row.tracking as any)}, ${row.click_url || null}, ${row.ip_hash}, ${row.origin || null}, ${row.earner_id || null}) returning id`;
       return r.id;
     },
     async claimImpression(id, minAgeMs) {
@@ -40,6 +40,49 @@ export function pgStore(dbUrl: string): Store {
       }
       const again = await sql`select * from impact_wait.ads where id = ${id} and created_at > now() - interval '1 day'`;
       return again[0] ? { row: again[0] as unknown as AdRow, first: false } : null;
+    },
+    async program() {
+      const [r] = await sql`select user_share_pct::float8 as user_share_pct, est_ecpm_usd::float8 as est_ecpm_usd, min_payout_usd::float8 as min_payout_usd,
+        daily_cap, min_gap_seconds, max_earners_per_ip_day from impact_wait.program where id = 1`;
+      return r as unknown as Program;
+    },
+    async earnersFromIp(ipHash, seconds) {
+      const [r] = await sql`select count(*)::int as n from impact_wait.earners where ip_hash = ${ipHash} and created_at > now() - make_interval(secs => ${seconds})`;
+      return r.n;
+    },
+    async createEarner(row) {
+      const [r] = await sql`insert into impact_wait.earners (token_hash, ip_hash, ref) values (${row.token_hash}, ${row.ip_hash}, ${row.ref}) returning id`;
+      return r.id;
+    },
+    async findEarner(tokenHash) {
+      const [r] = await sql`select id, status from impact_wait.earners where token_hash = ${tokenHash}`;
+      return r ? { id: r.id, status: r.status } : null;
+    },
+    async creditImpression(adId, earnerId, dailyCap, gapSeconds) {
+      // One earner's credits are serialized by an advisory lock, so two impressions landing
+      // together cannot both slip under the cap or the gap.
+      return await sql.begin(async (tx: any) => {
+        await tx`select pg_advisory_xact_lock(hashtext(${earnerId}::text))`;
+        const [w] = await tx`select count(*) filter (where impression_at > now() - interval '24 hours')::int as today,
+            max(impression_at) as last from impact_wait.ads where earner_id = ${earnerId} and credited`;
+        if (w.today >= dailyCap) return false;
+        if (w.last && new Date(w.last).getTime() > Date.now() - gapSeconds * 1000) return false;
+        const rows = await tx`update impact_wait.ads set credited = true where id = ${adId} and earner_id = ${earnerId} and not credited returning id`;
+        return rows.length === 1;
+      });
+    },
+    async earnerSummary(earnerId) {
+      const [r] = await sql`select e.id as earner_id, e.status, e.payout_email, e.created_at,
+          (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited) as credited_total,
+          (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited and a.impression_at > now() - interval '24 hours') as credited_today,
+          (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited and a.settlement_id is null) as pending_waits,
+          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.earner_payouts p where p.earner_id = e.id and p.status = 'owed') as owed_usd,
+          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.earner_payouts p where p.earner_id = e.id and p.status = 'paid') as paid_usd
+        from impact_wait.earners e where e.id = ${earnerId}`;
+      return (r as unknown as EarnerSummary) || null;
+    },
+    async setPayoutEmail(earnerId, email) {
+      await sql`update impact_wait.earners set payout_email = ${email} where id = ${earnerId}`;
     },
     async stats(site) {
       const [t] = await sql`select coalesce(sum(sponsored_waits),0)::bigint as sponsored_waits, coalesce(sum(paid_waits),0)::bigint as paid_waits, coalesce(sum(clicks),0)::bigint as clicks, count(*) filter (where sponsored_waits > 0)::int as sites from impact_wait.site_totals`;
