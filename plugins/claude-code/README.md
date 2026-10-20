@@ -9,6 +9,8 @@ est. earned $0.05 this session · $0.98 lifetime · 1,234 waits so far
 
 It appears when a turn starts, counts a view only after it has been on screen for a full second, and clears a few seconds after the reply lands. When the terminal is wide the ad's one-line body shows too.
 
+On long turns a fresh ad replaces it every 30 seconds, at most 8 times a turn, but only while you are around: within 2 minutes of your last prompt, keystroke in the prompt box, or press in the band or pane. If you walk away, one ad stays up and no new views are counted until you are back. Both timings are in `/config` (rotation can be turned off; it never goes below 30 seconds).
+
 Around it:
 
 - **Status line**: `goodwait: 1,234 waits · est. $0.98 earned`, always visible while the mod is on, refreshed every 5 minutes and after each counted wait.

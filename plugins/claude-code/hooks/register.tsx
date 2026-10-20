@@ -26,6 +26,12 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitImpact, Goodw
 // the network actually paid. /earn shows the balance; /earn paypal <email>
 // sets where payouts go.
 //
+// Long turns: while Claude keeps working, a fresh ad replaces the shown one
+// every 30 seconds (the rotate setting), at most 8 times a turn, and only while
+// the person is around: within 2 minutes (the presence setting) of their last
+// prompt, keystroke in the prompt box or press in the mod's band or pane.
+// Nobody around, nothing rotates: one ad stays up and no new view is counted.
+//
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
 // matching line. Nothing else. The site key defaults to "claude-code" (the
@@ -39,6 +45,8 @@ const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
 const QUERY_CHARS = 500
 const IMPRESSION_MS = 1000
 const LINGER_MS = 4000
+const MIN_ROTATE_SECONDS = 30
+const MAX_ROTATIONS = 8
 const STATS_REFRESH_MS = 5 * 60 * 1000
 const HIDDEN_KEY = 'goodwait.hidden'
 const PANE = 'goodwait'
@@ -56,7 +64,7 @@ const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
 const earner = atom({ plugin: 'goodwait', key: 'earner' } as const, null)
 
-type Config = { site: string; endpoint: string; ecpm: number }
+type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number }
 
 // Module state. A hot reload starts it over, which is fine: it only tracks
 // the turn in flight and the timers that belong to it.
@@ -67,6 +75,12 @@ let impressionTimer: Timer | null = null
 let statsTimer: Timer | null = null
 // This install's earner token, loaded from the plugin store at session start.
 let earnerToken = ''
+// Rotation on long turns. idleTicks counts rotation intervals since the
+// person last did something; any sign of them sets it back to 0.
+let rotateTimer: Timer | null = null
+let rotations = 0
+let idleTicks = 0
+let turnText = ''
 
 function money(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -270,6 +284,7 @@ async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   // The public number moved; show it.
   fire(refreshStats($, cfg))
   if (credited) fire(fetchEarner($, cfg))
+  scheduleRotation($, cfg, shown.turnId)
 }
 
 async function fetchAd($: EngineInterface, cfg: Config, turnId: string, text: string) {
@@ -308,6 +323,35 @@ async function fetchAd($: EngineInterface, cfg: Config, turnId: string, text: st
   })
 }
 
+// After a view counts, line up the next ad for a long turn.
+function scheduleRotation($: EngineInterface, cfg: Config, turnId: string) {
+  if (cfg.rotateSeconds <= 0 || rotateTimer || activeTurn !== turnId || rotations >= MAX_ROTATIONS) return
+  rotateTimer = $.clock.after(cfg.rotateSeconds * 1000, () => {
+    rotateTimer = null
+    if (activeTurn !== turnId || rotations >= MAX_ROTATIONS) return
+    idleTicks += 1
+    // Nobody around: keep the ad up, count nothing new. A sign of the person resumes it.
+    if (idleTicks * cfg.rotateSeconds > cfg.presenceSeconds) return
+    rotations += 1
+    fire(fetchAd($, cfg, turnId, turnText))
+  })
+}
+
+// The person did something: they are watching. Resume rotation if it had stopped.
+function sawPerson($: EngineInterface, cfg: Config) {
+  idleTicks = 0
+  if (activeTurn && !rotateTimer) {
+    const turnId = activeTurn
+    $.clock.after(0, () => {
+      fire(
+        read($, current).then(c => {
+          if (c && c.turnId === turnId && c.impressed) scheduleRotation($, cfg, turnId)
+        }),
+      )
+    })
+  }
+}
+
 async function clearIfTurn($: EngineInterface, turnId: string) {
   await update($, current, c => (c && c.turnId === turnId ? null : c))
 }
@@ -341,6 +385,13 @@ export const register: Register = (on, options) => {
     site: SITE_RE.test(rawSite) ? rawSite : 'sandbox',
     endpoint: String(options.endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, ''),
     ecpm: Number.isFinite(Number(options.ecpm)) && Number(options.ecpm) >= 0 ? Number(options.ecpm) : 24.5,
+    // 0 turns rotation off; anything else is held to at least 30 seconds.
+    rotateSeconds: (() => {
+      const n = Number(options.rotateSeconds ?? MIN_ROTATE_SECONDS)
+      if (!Number.isFinite(n) || n <= 0) return n === 0 ? 0 : MIN_ROTATE_SECONDS
+      return Math.max(MIN_ROTATE_SECONDS, n)
+    })(),
+    presenceSeconds: Number.isFinite(Number(options.presenceSeconds)) && Number(options.presenceSeconds) > 0 ? Number(options.presenceSeconds) : 120,
   }
 
   on('session.start', async ($, e, next) => {
@@ -378,6 +429,11 @@ export const register: Register = (on, options) => {
     activeTurn = e.turnId
     clearTimer?.cancel()
     clearTimer = null
+    rotateTimer?.cancel()
+    rotateTimer = null
+    rotations = 0
+    idleTicks = 0
+    turnText = e.text || ''
     if (e.text) {
       // Work that outlives this dispatch goes on a timer, never inside the hook.
       $.clock.after(0, () => {
@@ -390,10 +446,30 @@ export const register: Register = (on, options) => {
   on('turn.complete', ($, e, next) => {
     if (e.agentId) return next(e) // a subagent's turn, not the person's
     if (activeTurn === e.turnId) activeTurn = null
+    rotateTimer?.cancel()
+    rotateTimer = null
     clearTimer?.cancel()
     clearTimer = $.clock.after(LINGER_MS, () => {
       fire(clearIfTurn($, e.turnId))
     })
+    return next(e)
+  })
+
+  // ---- signs the person is at the keyboard (for rotation on long turns)
+  on('prompt.edit', ($, e, next) => {
+    sawPerson($, cfg)
+    return next(e)
+  })
+  on('prompt.submit', ($, e, next) => {
+    sawPerson($, cfg)
+    return next(e)
+  })
+  on('ui.press', ($, e, next) => {
+    sawPerson($, cfg)
+    return next(e)
+  })
+  on('ui.scroll', ($, e, next) => {
+    sawPerson($, cfg)
     return next(e)
   })
 

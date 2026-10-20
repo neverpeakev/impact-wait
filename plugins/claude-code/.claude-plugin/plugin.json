@@ -1,6 +1,6 @@
 {
   "name": "goodwait",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, and you earn a share of the ad revenue from your own waits (/earn).",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -21,6 +21,18 @@
       "title": "Estimated eCPM (USD)",
       "description": "Your estimated earnings per 1,000 counted paid waits. Default 24.50 = Idlen's published $35 network average for sponsored recommendations x the 70% publisher share. Idlen's dashboard is the exact figure.",
       "default": 24.5
+    },
+    "rotateSeconds": {
+      "type": "number",
+      "title": "Rotate ads on long turns (seconds)",
+      "description": "While Claude keeps working, show a fresh ad this often (minimum 30). 0 turns rotation off. Rotation runs only while you are around (see Presence window), at most 8 times a turn.",
+      "default": 30
+    },
+    "presenceSeconds": {
+      "type": "number",
+      "title": "Presence window (seconds)",
+      "description": "Ads rotate only within this long after your last prompt, keystroke in the prompt box, or press in the Goodwait band or pane. After that one ad stays up and no new views are counted.",
+      "default": 120
     }
   },
   "author": {
