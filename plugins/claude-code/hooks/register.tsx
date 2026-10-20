@@ -27,7 +27,7 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitImpact, Goodw
 // sets where payouts go.
 //
 // Long turns: while Claude keeps working, a fresh ad replaces the shown one
-// every 30 seconds (the rotate setting), at most 8 times a turn, and only while
+// every 15 seconds (the rotate setting), at most 16 times a turn, and only while
 // the person is around: within 2 minutes (the presence setting) of their last
 // prompt, keystroke in the prompt box or press in the mod's band or pane.
 // Nobody around, nothing rotates: one ad stays up and no new view is counted.
@@ -45,8 +45,8 @@ const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
 const QUERY_CHARS = 500
 const IMPRESSION_MS = 1000
 const LINGER_MS = 4000
-const MIN_ROTATE_SECONDS = 30
-const MAX_ROTATIONS = 8
+const MIN_ROTATE_SECONDS = 15 // Velocity's minimum refresh interval
+const MAX_ROTATIONS = 16
 const STATS_REFRESH_MS = 5 * 60 * 1000
 const HIDDEN_KEY = 'goodwait.hidden'
 const PANE = 'goodwait'
@@ -385,7 +385,7 @@ export const register: Register = (on, options) => {
     site: SITE_RE.test(rawSite) ? rawSite : 'sandbox',
     endpoint: String(options.endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, ''),
     ecpm: Number.isFinite(Number(options.ecpm)) && Number(options.ecpm) >= 0 ? Number(options.ecpm) : 24.5,
-    // 0 turns rotation off; anything else is held to at least 30 seconds.
+    // 0 turns rotation off; anything else is held to at least 15 seconds.
     rotateSeconds: (() => {
       const n = Number(options.rotateSeconds ?? MIN_ROTATE_SECONDS)
       if (!Number.isFinite(n) || n <= 0) return n === 0 ? 0 : MIN_ROTATE_SECONDS

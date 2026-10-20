@@ -6,7 +6,7 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
   const ads = new Map<string, any>();
   const earners = new Map<string, any>();
   const payouts: any[] = [];
-  const prog: Program = { user_share_pct: 50, est_ecpm_usd: null, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 20, max_earners_per_ip_day: 3, ...programOverrides };
+  const prog: Program = { user_share_pct: 50, est_ecpm_usd: null, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 15, max_earners_per_ip_day: 3, ...programOverrides };
   const imp: Impact = { cause_name: null, cause_url: null, unit_label: null, usd_per_unit: null, pledge_pct: null, donated_usd: 0, donated_updated_at: null, ...impact };
   return {
     sites, totals, ads, earners, payouts, prog,

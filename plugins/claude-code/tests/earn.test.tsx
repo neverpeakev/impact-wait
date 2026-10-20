@@ -42,7 +42,7 @@ const world = (): World => ({
   me: {
     earner_id: 'e1', status: 'active', credited_total: 0, credited_today: 0, pending_waits: 0, owed_usd: 0, paid_usd: 0,
     est_pending_usd: null, created_at: '2026-10-20T00:00:00Z',
-    program: { share_pct: 50, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 20, est_ecpm_usd: null },
+    program: { share_pct: 50, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 15, est_ecpm_usd: null },
   },
 })
 

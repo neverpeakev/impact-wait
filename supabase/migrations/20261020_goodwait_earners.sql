@@ -24,7 +24,7 @@ create table if not exists impact_wait.program (
   est_ecpm_usd numeric(10,4) null check (est_ecpm_usd is null or est_ecpm_usd >= 0),
   min_payout_usd numeric(10,2) not null default 10 check (min_payout_usd >= 0),
   daily_cap int not null default 200 check (daily_cap >= 0),
-  min_gap_seconds int not null default 20 check (min_gap_seconds >= 0),
+  min_gap_seconds int not null default 15 check (min_gap_seconds >= 0),
   max_earners_per_ip_day int not null default 3 check (max_earners_per_ip_day >= 0),
   updated_at timestamptz not null default now()
 );

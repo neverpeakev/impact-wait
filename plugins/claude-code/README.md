@@ -9,7 +9,7 @@ est. earned $0.05 this session · $0.98 lifetime · 1,234 waits so far
 
 It appears when a turn starts, counts a view only after it has been on screen for a full second, and clears a few seconds after the reply lands. When the terminal is wide the ad's one-line body shows too.
 
-On long turns a fresh ad replaces it every 30 seconds, at most 8 times a turn, but only while you are around: within 2 minutes of your last prompt, keystroke in the prompt box, or press in the band or pane. If you walk away, one ad stays up and no new views are counted until you are back. Both timings are in `/config` (rotation can be turned off; it never goes below 30 seconds).
+On long turns a fresh ad replaces it every 15 seconds, at most 16 times a turn, but only while you are around: within 2 minutes of your last prompt, keystroke in the prompt box, or press in the band or pane. If you walk away, one ad stays up and no new views are counted until you are back. Both timings are in `/config` (rotation can be turned off; it never goes below 15 seconds, the ad network's refresh floor).
 
 Around it:
 
@@ -26,7 +26,7 @@ On first run the mod signs this install up as an earner (no account, no email ne
 - `/earn paypal you@example.com` sets where payouts go.
 - Views settle monthly from what the ad network **actually paid** for the period, split by credited views. Nothing is owed from estimates.
 - Payouts go out once you are owed $10.
-- Limits: at most 200 credited views a day and one every 20 seconds. Fake or scripted views get the earner banned and forfeit what is owed.
+- Limits: at most 200 credited views a day and one every 15 seconds. Fake or scripted views get the earner banned and forfeit what is owed.
 
 Keep your earner token private: it is your balance. It lives in the plugin store on this machine; reinstalling on a new machine starts a new earner.
 

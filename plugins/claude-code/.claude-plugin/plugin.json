@@ -1,6 +1,6 @@
 {
   "name": "goodwait",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, and you earn a share of the ad revenue from your own waits (/earn).",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -25,8 +25,8 @@
     "rotateSeconds": {
       "type": "number",
       "title": "Rotate ads on long turns (seconds)",
-      "description": "While Claude keeps working, show a fresh ad this often (minimum 30). 0 turns rotation off. Rotation runs only while you are around (see Presence window), at most 8 times a turn.",
-      "default": 30
+      "description": "While Claude keeps working, show a fresh ad this often (minimum 15, the ad network's refresh floor). 0 turns rotation off. Rotation runs only while you are around (see Presence window), at most 16 times a turn.",
+      "default": 15
     },
     "presenceSeconds": {
       "type": "number",

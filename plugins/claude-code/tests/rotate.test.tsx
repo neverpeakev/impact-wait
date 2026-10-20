@@ -2,8 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-// Long turns: a fresh ad every 30s, only while the person is around (2 min
-// since their last sign), at most 8 rotations a turn.
+// Long turns: a fresh ad every 15s, only while the person is around (2 min
+// since their last sign), at most 16 rotations a turn.
 
 let n = 0
 const adResponse = () => {
@@ -70,7 +70,7 @@ async function typeKey($: Engine) {
   await prompt.edit({ origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: 'a' })
 }
 
-test('a long turn rotates every 30s while the person is around, then holds one ad and counts nothing new', async ($, on) => {
+test('a long turn rotates every 15s while the person is around, then holds one ad and counts nothing new', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const fetched: { url: string; body?: string }[] = []
@@ -78,43 +78,43 @@ test('a long turn rotates every 30s while the person is around, then holds one a
   await startTurn($, clock, 'r1')
   expect([ads(fetched), events(fetched)]).toEqual([1, 1])
 
-  // Four rotations fit in the 2-minute presence window (30, 60, 90, 120s idle).
-  for (let i = 0; i < 4; i++) {
-    await tick(clock, 30_000)
+  // Eight rotations fit in the 2-minute presence window (15, 30, ... 120s idle).
+  for (let i = 0; i < 8; i++) {
+    await tick(clock, 15_000)
     await tick(clock, 1000)
   }
-  expect([ads(fetched), events(fetched)]).toEqual([5, 5])
+  expect([ads(fetched), events(fetched)]).toEqual([9, 9])
   // Same prompt each time.
   const queries = fetched.filter(f => f.url.endsWith('/ad')).map(f => JSON.parse(f.body ?? '{}').query)
   expect(new Set(queries).size).toBe(1)
 
   // Nobody around: no more ads, no more views, however long the turn runs.
   await tick(clock, 10 * 60_000)
-  expect([ads(fetched), events(fetched)]).toEqual([5, 5])
+  expect([ads(fetched), events(fetched)]).toEqual([9, 9])
   const band = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
-  expect(await band.find({ type: 'Text', text: /^Brand 5$/ })).toBeDefined() // the last ad stays up
+  expect(await band.find({ type: 'Text', text: /^Brand 9$/ })).toBeDefined() // the last ad stays up
   await band.unmount()
 
   // A keystroke in the prompt box: they are back, rotation resumes.
   await typeKey($)
   await tick(clock, 0)
-  await tick(clock, 30_000)
+  await tick(clock, 15_000)
   await tick(clock, 1000)
-  expect([ads(fetched), events(fetched)]).toEqual([6, 6])
+  expect([ads(fetched), events(fetched)]).toEqual([10, 10])
 })
 
-test('at most 8 rotations a turn even with the person active throughout', async ($, on) => {
+test('at most 16 rotations a turn even with the person active throughout', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const fetched: { url: string; body?: string }[] = []
   bottom(on, fetched)
   await startTurn($, clock, 'r2')
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 24; i++) {
     await typeKey($)
-    await tick(clock, 30_000)
+    await tick(clock, 15_000)
     await tick(clock, 1000)
   }
-  expect(ads(fetched)).toBe(9) // the first ad + 8 rotations
+  expect(ads(fetched)).toBe(17) // the first ad + 16 rotations
 })
 
 test('rotation stops when the turn ends, and nothing rotates on a short turn', async ($, on) => {
@@ -140,13 +140,13 @@ test('rotateSeconds 0 turns rotation off', { options: { rotateSeconds: 0 } }, as
   expect(ads(fetched)).toBe(1)
 })
 
-test('rotateSeconds below 30 is held to 30', { options: { rotateSeconds: 5 } }, async ($, on) => {
+test('rotateSeconds below 15 is held to 15', { options: { rotateSeconds: 5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const fetched: { url: string; body?: string }[] = []
   bottom(on, fetched)
   await startTurn($, clock, 'r5')
-  await tick(clock, 29_000)
+  await tick(clock, 14_000)
   expect(ads(fetched)).toBe(1)
   await tick(clock, 1000)
   expect(ads(fetched)).toBe(2)
