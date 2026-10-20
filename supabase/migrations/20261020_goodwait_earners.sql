@@ -110,3 +110,10 @@ revoke all on impact_wait.earners, impact_wait.program, impact_wait.settlements,
 --   update impact_wait.earner_payouts set status = 'paid', paid_at = now(), method = 'paypal', note = '<txn id>'
 --     where earner_id = '<id>' and status = 'owed';
 --   update impact_wait.earners set status = 'banned' where id = '<id>';  -- stops future credit
+
+-- Applied as a follow-up (goodwait_earners_rls): RLS on, no policies, matching the other impact_wait tables.
+-- The function connects as the table owner, so it is unaffected; anon/authenticated get nothing.
+alter table impact_wait.earners enable row level security;
+alter table impact_wait.program enable row level security;
+alter table impact_wait.settlements enable row level security;
+alter table impact_wait.earner_payouts enable row level security;
