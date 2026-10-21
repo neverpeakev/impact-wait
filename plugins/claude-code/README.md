@@ -1,75 +1,88 @@
-# Goodwait for Claude Code
+# Knippel for Claude Code
 
-A Claude Code mod (plugin of function hooks). While Claude works, one labeled sponsored line sits above the prompt:
+Get paid while Claude Code thinks.
 
-```
-Sponsored · Fuel Path Pro: Plan every road trip in one tap.  1: Explore  2: counter  h: hide
-est. earned $0.05 this session · $0.98 lifetime · 1,234 waits so far
-```
+While your agent works, this mod shows one labeled sponsored line above the prompt. Every view you're actually there for earns you **half the ad revenue**. You can cash it out to PayPal, donate it to charity: water, and it counts as entries in prize draws.
 
-It appears when a turn starts, counts a view only after it has been on screen for a full second, and clears a few seconds after the reply lands. When the terminal is wide the ad's one-line body shows too.
+The full source is here so you can check exactly what it does. It never reads your files, your code or anything the agent writes.
 
-On long turns a fresh ad replaces it every 15 seconds, at most 16 times a turn, but only while you are around: within 2 minutes of your last prompt, keystroke in the prompt box, or press in the band or pane. If you walk away, one ad stays up and no new views are counted until you are back. Both timings are in `/config` (rotation can be turned off; it never goes below 15 seconds, the ad network's refresh floor).
-
-Around it:
-
-- **Status line**: `goodwait: 1,234 waits · est. $0.98 earned`, always visible while the mod is on, refreshed every 5 minutes and after each counted wait.
-- **Band controls** (focus the band with ctrl+x tab, then a key): `1` (the ad's call to action) opens it in your browser through the server's click redirect, so clicks count like web clicks; `2` opens the counter pane; `h` hides the line.
-- **Earnings pane**: `/goodwait` opens a pane with your estimated lifetime and session earnings, paid waits, the public total, the leaderboard and this site's waits and clicks. Keys: `r` refresh, `t` turn the line off or on, `o` open the counter page.
-- **Milestones**: a toast at your 10th, 50th, 100th, 250th, 500th and 1,000th wait of a session.
-
-## Earn a share of the ad revenue
-
-On first run the mod signs this install up as an earner (no account, no email needed) and keeps a private earner token in the plugin store. Every paid view the API credits to that token earns you a share of the ad revenue (50% by default).
-
-- `/earn` shows your balance: paid views today and pending, what you are owed, and what has been paid out.
-- `/earn paypal you@example.com` sets where payouts go.
-- Views settle monthly from what the ad network **actually paid** for the period, split by credited views. Nothing is owed from estimates.
-- Payouts go out once you are owed $10.
-- Limits: at most 200 credited views a day and one every 15 seconds. Fake or scripted views get the earner banned and forfeit what is owed.
-
-Keep your earner token private: it is your balance. It lives in the plugin store on this machine; reinstalling on a new machine starts a new earner.
-
-## Ad source: Velocity
-
-Velocity is on by default, using Goodwait's own ad unit. The mod asks Velocity for the ad straight from your machine (the same calls Velocity's browser SDK makes), fires Velocity's impression URL from your machine after the ad has been on screen for a second, then reports the view once to the Goodwait API so it counts and credits. Your earner id goes to Velocity as the publisher user id, so Velocity's own reporting can show revenue per earner. No fill, an error, or no answer within 2.5 seconds falls back to the Goodwait API's ads. If Velocity can't be reached at the start of a session, the mod tries again a minute later. Clear **Velocity ad unit ID** in `/config` to turn Velocity off.
+> Knippel is the working name. Inside Claude Code the mod still calls itself Goodwait (`/goodwait`, the pane title) until the rename ships.
 
 ## Install
 
 ```bash
-git clone https://github.com/neverpeakev/goodwait
-claude --plugin-dir ./goodwait/plugins/claude-code
+git clone https://github.com/neverpeakev/knippel-claude-code
+claude --plugin-dir ./knippel-claude-code
 ```
 
-Or add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` so it loads in every session.
+To load it in every session, add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`.
+
+If a friend gave you an invite code, set it in `/config` (**Invite code**) before your first run.
+
+## How it works
+
+1. **A turn starts.** One sponsored line appears above the prompt.
+2. **It counts only when you're there.** A view counts after the line has been on screen for a full second. On long turns a new ad rotates in every 15 seconds, at most 16 times a turn, and only within 2 minutes of your last keystroke or prompt. Walk away and nothing more is counted.
+3. **The reply lands.** The line clears a few seconds later.
+
+Subagents running in the background never trigger an ad.
+
+## Earning
+
+On first run the mod signs this install up as an earner. There's no account or email; it keeps a private token in the plugin store on this machine.
+
+- **Your share:** 50% of what advertisers actually paid for your views, settled monthly. Nothing is owed from estimates.
+- **`/earn`** shows your balance, paid views today, what's been paid out or donated, draw entries and your invite code.
+- **`/earn paypal you@example.com`** sets where cash goes. Cash goes out once you have $10. Your first cash-out is held 30 days after you join, to stop fraud.
+- **`/earn donate`** gives your balance to charity: water; `/earn donate 2.50` gives part of it. Donations go out monthly.
+- **`/earn exit donate`** sends all future earnings straight to charity: water. `/earn exit cash` switches back.
+- **`/earn refer`** shows your invite code. When a friend joins with it, you get 10% of what they earn, for life. That comes out of our half, never theirs.
+
+Limits: at most 200 credited views a day and one every 15 seconds. Scripted or fake views get the earner banned and forfeit the balance.
+
+Keep your token private, because it holds your balance. Reinstalling on a new machine starts a new earner.
+
+## What leaves your machine
+
+The mod makes these requests and no others.
+
+**To Velocity** (`gw.vlcapi.net`), the ad network, directly from your machine:
+- The first 500 characters of your prompt, so the ad matches what you're working on.
+- A random per-session id, your earner id, the ad unit and your timezone.
+- The ad's impression URL, after the ad has been on screen for a second.
+
+**To the Knippel API** (`mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait`):
+- `/earner`: a one-time sign-up, plus the invite code if you set one.
+- `/ad`: used only when Velocity has no ad. It sends the first 500 characters of your prompt, the site key, the session id and your earner token.
+- `/event`, `/impression/external`: that a view happened, so it counts and is credited.
+- `/earner/me`, `/earner/payout`, `/earner/donate`, `/earner/exit`: your balance and your choices.
+- `/stats`: the public counter.
+
+**Never sent:** your files, your code, terminal or tool output, anything the agent writes, and anything from subagents.
+
+Like any web request, both servers see your IP address. Your PayPal email is stored only for payouts and is shown back to you masked.
 
 ## Settings
 
 In `/config` under **goodwait**:
 
-- **Site key** (default `claude-code`): your name on the public leaderboard. `sandbox` shows a house ad and counts nothing.
-- **Estimated eCPM (USD)** (default 24.50): what you earn per 1,000 counted paid waits. The default is Idlen's published $35 network average for sponsored recommendations times the 70% publisher share. Idlen's dashboard is the exact balance, paid monthly once you pass $50.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Invite code | empty | A friend's code, used once at sign-up |
+| Rotate every (seconds) | 15 | 0 turns rotation off; never below 15 |
+| Presence window (seconds) | 120 | How long after your last activity ads keep rotating |
+| Velocity ad unit ID | Knippel's unit | Clear it to use only the Knippel API's ads |
+| Site key | `claude-code` | `sandbox` shows a test ad and counts nothing |
 
-## Actual earnings
-
-When a network's dashboard figure is recorded in the API (`impact_wait.earnings`, one row per report), the mod shows that actual as lifetime earnings, plus an estimate for the paid waits counted after the report. With no actual recorded, lifetime is an estimate from the eCPM. To record a figure:
-
-```sql
-insert into impact_wait.earnings (network, site_key, earned_usd, paid_waits, clicks, as_of, source)
-values ('idlen', 'claude-code', 0.63, 30, 1, now(), 'idlen dashboard');
-```
-- **API endpoint**: leave as is unless you self-host the API.
-- **Velocity ad unit ID** (default: Goodwait's own unit; empty = off) and **Velocity site URL**: the placement as registered in Velocity.
-
-Commands: `/goodwait` opens the counter pane, `/goodwait off` and `/goodwait on` toggle the line. The `hide` button does the same and remembers your choice across sessions.
-
-## What leaves your machine
-
-With Velocity on, the first 500 characters of your prompt, a random per-session id and your earner id go to Velocity to pick the ad. Otherwise, the first 500 characters of your prompt, the site key, a random per-session id and your earner token, sent to the Goodwait API to pick one matching line and credit your view. The API passes the prompt text on to the ad network to match the ad. No files, no tool output, no code beyond what you typed in the prompt. Your PayPal email is stored only for payouts and shown back to you masked.
+Turn the line off any time with `/goodwait off`, or press `h` on the band. `/goodwait on` brings it back.
 
 ## Development
 
 ```bash
-claude plugin validate plugins/claude-code
-claude plugin test plugins/claude-code
+claude plugin validate .
+claude plugin test .
 ```
+
+## License
+
+MIT

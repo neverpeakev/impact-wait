@@ -125,7 +125,7 @@ test('nothing is drawn before a turn', async ($, on) => {
   }
 })
 
-test('the line shows during a turn, counts after one second, clears after the linger', async ($, on) => {
+test('the line shows during a turn, counts after one second, clears after the linger', { options: { ecpm: 24.5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const s = seen()
@@ -236,7 +236,7 @@ test('hide persists across sessions and /goodwait on brings it back', async ($, 
   expect(stats.text).toMatch(/opened/)
 })
 
-test('status line carries the public counter from session start, and clears when hidden', async ($, on) => {
+test('status line carries the public counter from session start, and clears when hidden', { options: { ecpm: 24.5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const s = seen()
@@ -282,7 +282,7 @@ test('the band shows the body line only when wide, and "open" goes through the c
   await narrow.unmount()
 })
 
-test('a toast marks the 10th wait of the session', async ($, on) => {
+test('a toast marks the 10th wait of the session', { options: { ecpm: 24.5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const s = seen()
@@ -305,7 +305,7 @@ test('a toast marks the 10th wait of the session', async ($, on) => {
   expect(s.toasts.some(t => t.startsWith('Your waits this session: 9'))).toBe(false)
 })
 
-test('/goodwait opens the pane, which shows totals, the leaderboard and this session', async ($, on) => {
+test('/goodwait opens the pane, which shows totals, the leaderboard and this session', { options: { ecpm: 24.5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const s = seen()
@@ -324,7 +324,7 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
     expect(await ui.find({ type: 'Text', text: /est. this session/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1,234$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Riverside Library/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /\$24\.50 eCPM/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\$24\.50 per 1,000 paid views/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /pledged to Khan Academy: about \$0\.49/ })).toBeDefined()
     expect(await ui.find({ key: 'refresh' })).toBeDefined()
     await ui.press({ key: 'toggle' })
@@ -337,7 +337,7 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
   }
 })
 
-test('a recorded dashboard actual replaces the estimate, plus an estimate for waits counted since', async ($, on) => {
+test('a recorded dashboard actual replaces the estimate, plus an estimate for waits counted since', { options: { ecpm: 24.5 } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const s = seen()
@@ -360,5 +360,17 @@ test('a recorded dashboard actual replaces the estimate, plus an estimate for wa
   expect(await ui.find({ type: 'Text', text: /lifetime earnings \(actual as of Oct 5\)/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /idlen: \$0\.60 actual on 32 paid waits \(dashboard, Oct 5\)/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /\+ est\. \$0\.20 for paid waits counted since/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the default estimate is the conservative share rate, and the pane says settled money replaces it', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  bottom(on, seen())
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await clock.advance(0)
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /\$2\.25 per 1,000 paid views.*replaces the estimate/ })).toBeDefined()
   await ui.unmount()
 })

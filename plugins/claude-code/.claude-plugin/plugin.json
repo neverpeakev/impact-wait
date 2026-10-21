@@ -19,8 +19,8 @@
     "ecpm": {
       "type": "number",
       "title": "Estimated eCPM (USD)",
-      "description": "Your estimated earnings per 1,000 counted paid waits. Default 24.50 = Idlen's published $35 network average for sponsored recommendations x the 70% publisher share. Idlen's dashboard is the exact figure.",
-      "default": 24.5
+      "description": "Estimate only: your share per 1,000 paid views. Default 2.25 = half of the ad network's early publisher rate. Settled monthly earnings replace the estimate.",
+      "default": 2.25
     },
     "rotateSeconds": {
       "type": "number",
@@ -37,7 +37,7 @@
     "velocityAdUnit": {
       "type": "string",
       "title": "Velocity ad unit ID",
-      "description": "The Velocity native ad unit for this placement. Defaults to Goodwait's own unit. Empty = Velocity off (the Goodwait API's own ads only).",
+      "description": "The Velocity native ad unit for this placement. Defaults to this mod's own unit. Empty = Velocity off (the API's own ads only).",
       "default": "e7b24fe95681"
     },
     "invite": {
@@ -54,7 +54,6 @@
     }
   },
   "author": {
-    "name": "Never Peak Inc.",
-    "email": "kevin@neverpeakmarketing.com"
+    "name": "Never Peak"
   }
 }

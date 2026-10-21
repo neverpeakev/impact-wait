@@ -17,8 +17,8 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 // Earnings: when a network's dashboard figure has been recorded in the API
 // (the earnings table), lifetime shows that actual, plus an estimate for the
 // paid waits counted since that report. With no actual recorded, everything is
-// an estimate: counted paid waits x the eCPM in settings (default: Idlen's
-// published $35 network-average CPM for this format x the 70% publisher share).
+// an estimate: counted paid waits x the eCPM in settings (default: the user's share at
+// the ad network's early publisher rate, see DEFAULT_ECPM).
 //
 // Earning: on first run the mod signs this install up as an earner and keeps
 // the earner token in the plugin store. Paid views the API credits to that
@@ -51,6 +51,9 @@ const DEFAULT_ENDPOINT = 'https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/
 const HOME = 'https://goodwait.vercel.app'
 const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
 const QUERY_CHARS = 500
+// Your share per 1,000 paid views, for estimates only: half of Velocity's early publisher rate
+// (about $4.67 per 1,000 on its first reported day). Settled money always replaces it.
+const DEFAULT_ECPM = 2.25
 const IMPRESSION_MS = 1000
 const LINGER_MS = 4000
 const MIN_ROTATE_SECONDS = 15 // Velocity's minimum refresh interval
@@ -635,7 +638,7 @@ export const register: Register = (on, options) => {
   const cfg: Config = {
     site: SITE_RE.test(rawSite) ? rawSite : 'sandbox',
     endpoint: String(options.endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, ''),
-    ecpm: Number.isFinite(Number(options.ecpm)) && Number(options.ecpm) >= 0 ? Number(options.ecpm) : 24.5,
+    ecpm: Number.isFinite(Number(options.ecpm)) && Number(options.ecpm) >= 0 ? Number(options.ecpm) : DEFAULT_ECPM,
     // 0 turns rotation off; anything else is held to at least 15 seconds.
     rotateSeconds: (() => {
       const n = Number(options.rotateSeconds ?? MIN_ROTATE_SECONDS)
@@ -881,7 +884,7 @@ export const register: Register = (on, options) => {
         ))}
         {life.isActual && life.estSince > 0 ? <Text dimColor>+ est. {money(life.estSince)} for paid waits counted since that report</Text> : null}
         <Text dimColor wrap="wrap">
-          Estimates use {money(cfg.ecpm)} eCPM (Idlen's published $35 network average for this format x your 70% share); change it in /config. Idlen pays monthly once you pass $50; its dashboard is the exact balance.
+          Estimates use {money(cfg.ecpm)} per 1,000 paid views, your share at the ad network's early rate; change it in /config. Real money is settled monthly from what the network actually paid and replaces the estimate.
         </Text>
         <Text dimColor>
           {pledgePct}% of net is pledged to {cause}: about {money(lifetimeEarned * (pledgePct / 100))} so far.
