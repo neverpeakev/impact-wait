@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Knippel - account confirmed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--linen:#EEF2F8;--ink:#14213D;--ink-soft:#4A5878;--cobalt:#2B50C8;--err:#B3261E}
+body{margin:0;background:var(--linen);color:var(--ink);font:400 17px/1.6 "Public Sans",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:72px 24px}
+h1{font:400 clamp(34px,5vw,48px)/1.1 "Young Serif",Georgia,serif;margin:0 0 16px}
+p{color:var(--ink-soft);margin:0 0 14px}
+a{color:var(--cobalt);font-weight:600}
+.err h1{color:var(--err)}
+</style>
+</head>
+<body>
+<main id="m" aria-live="polite">
+  <h1>Confirming your account…</h1>
+</main>
+<script>
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const q = new URLSearchParams(location.search);
+  const m = document.getElementById("m");
+  const err = h.get("error_description") || q.get("error_description");
+  // Never leave tokens sitting in the address bar or history.
+  history.replaceState(null, "", location.pathname);
+  if (err) {
+    m.className = "err";
+    m.innerHTML = "<h1>That link didn't work.</h1><p></p><p>Links expire after a while and work once. Sign up again from the page you came from and we'll send a fresh one.</p>";
+    m.querySelector("p").textContent = err.replace(/\+/g, " ") + ".";
+  } else if (h.get("access_token") || h.get("type") === "signup") {
+    m.innerHTML = "<h1>You're in.</h1><p>Your Knippel account is confirmed. We'll email you the one-line install for Claude Code as soon as it opens.</p>";
+  } else {
+    m.innerHTML = "<h1>Nothing to confirm here.</h1><p>Open the link from the email we sent you to confirm your account.</p>";
+  }
+})();
+</script>
+</body>
+</html>
