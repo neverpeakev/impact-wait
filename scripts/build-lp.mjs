@@ -493,7 +493,89 @@ a{color:var(--cobalt);font-weight:600}
 `;
 }
 
+// Public payout ledger: live totals from the API, no identities. Honest when empty.
+const API = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait";
+function ledgerPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${BRAND} - public payout ledger</title>
+<meta name="description" content="Every dollar ${BRAND} has credited, paid out and donated, live.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--linen:#EEF2F8;--ink:#14213D;--ink-soft:#4A5878;--cobalt:#2B50C8;--brass:#B8892B;--rule:#D5DDEA}
+*{box-sizing:border-box}
+body{margin:0;background:var(--linen);color:var(--ink);font:400 17px/1.6 "Public Sans",system-ui,sans-serif}
+main{max-width:880px;margin:0 auto;padding:56px 24px 72px}
+a{color:var(--cobalt)}
+h1{font:400 clamp(34px,5vw,52px)/1.08 "Young Serif",Georgia,serif;margin:0 0 12px}
+.lead{color:var(--ink-soft);max-width:60ch;margin:0 0 40px}
+dl{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin:0 0 40px;border-top:1px solid var(--rule)}
+dl div{padding:22px 20px 22px 0;border-bottom:1px solid var(--rule)}
+dt{font-size:15px;color:var(--ink-soft);margin-bottom:4px}
+dd{margin:0;font:400 clamp(28px,4vw,40px)/1.1 "Young Serif",Georgia,serif;font-variant-numeric:tabular-nums}
+dd.brass{color:var(--brass)}
+.note{font-size:15px;color:var(--ink-soft);max-width:66ch}
+h2{font:400 26px/1.2 "Young Serif",Georgia,serif;margin:40px 0 12px}
+ul{padding-left:20px;max-width:66ch}
+li{margin:6px 0}
+@media (max-width:640px){dl{grid-template-columns:1fr 1fr}main{padding:40px 16px 56px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Every dollar, in the open.</h1>
+  <p class="lead">What ${BRAND} has credited to the people who use it, paid out, and donated. Totals only, never names. Updated live from the same database that pays people.</p>
+  <dl aria-live="polite">
+    <div><dt>Credited to users</dt><dd class="brass" id="credited">-</dd></div>
+    <div><dt>Paid out to PayPal</dt><dd id="paid">-</dd></div>
+    <div><dt>People paid</dt><dd id="people">-</dd></div>
+    <div><dt>Donated to <span id="cause">charity: water</span></dt><dd id="donated">-</dd></div>
+    <div><dt>Donations on the way</dt><dd id="pending">-</dd></div>
+    <div><dt>Last activity</dt><dd id="last" style="font-size:22px">-</dd></div>
+  </dl>
+  <p class="note" id="status">Loading the ledger…</p>
+
+  <h2>How the numbers work</h2>
+  <ul>
+    <li>Money is credited only after an ad network actually pays for a month, never from estimates.</li>
+    <li>Half of that goes to the people whose views earned it. Referral cuts come out of our half, never theirs.</li>
+    <li>Cash goes to PayPal once someone has $10, after a 30-day hold on their first cash-out.</li>
+    <li>Donations go out monthly, and are marked paid here once sent.</li>
+    <li>The Claude Code mod is <a href="https://github.com/neverpeakev/knippel-claude-code">open source</a>, so you can check exactly what it sends.</li>
+  </ul>
+</main>
+<script>
+(() => {
+  const usd = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const set = (id, v) => { document.getElementById(id).textContent = v; };
+  const status = document.getElementById("status");
+  fetch(${JSON.stringify(API)} + "/ledger", { headers: { accept: "application/json" } })
+    .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+    .then((l) => {
+      set("credited", usd(l.credited_to_users_usd)); set("paid", usd(l.paid_out_usd)); set("people", Number(l.people_paid || 0).toLocaleString("en-US"));
+      set("donated", usd(l.donated_usd)); set("pending", usd(l.donation_pending_usd)); if (l.cause) set("cause", l.cause);
+      set("last", l.last_activity_at ? new Date(l.last_activity_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "None yet");
+      status.textContent = Number(l.credited_to_users_usd) > 0 ? "Live from the payout database." : "Nothing credited yet. The first numbers appear after the first month's ad revenue is settled.";
+    })
+    .catch(() => {
+      ["credited","paid","people","donated","pending","last"].forEach((id) => set(id, "-"));
+      status.textContent = "The ledger goes live with the first settlement.";
+    });
+})();
+</script>
+</body>
+</html>
+`;
+}
+
 mkdirSync(new URL("../web/try/", import.meta.url), { recursive: true });
+writeFileSync(new URL("../web/try/ledger.html", import.meta.url), ledgerPage());
+console.log("web/try/ledger.html");
 writeFileSync(new URL("../web/try/welcome.html", import.meta.url), welcomePage());
 console.log("web/try/welcome.html");
 for (const [key, v] of Object.entries(VARIANTS)) {
