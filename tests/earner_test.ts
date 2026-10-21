@@ -142,7 +142,7 @@ Deno.test("earnings: an estimate shows only when an eCPM is configured, at the u
   for (let i = 0; i < 5; i++) await t.view(token);
   const m = await (await t.me(token)).json();
   assertEquals(m.est_pending_usd, 0.01); // 5/1000 x $4 x 50%
-  assertEquals(m.program, { share_pct: 50, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 0, est_ecpm_usd: 4 });
+  assertEquals(m.program, { share_pct: 50, referral_pct: 10, min_payout_usd: 10, hold_days: 30, daily_cap: 200, min_gap_seconds: 0, est_ecpm_usd: 4 });
 });
 
 Deno.test("payout email: validated, stored, and only ever shown masked", async () => {

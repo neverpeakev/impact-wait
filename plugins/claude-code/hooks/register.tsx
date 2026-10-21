@@ -69,7 +69,7 @@ const VELOCITY_TIMEOUT_MS = 2500
 const VELOCITY_DEFAULT_UNIT = 'e7b24fe95681'
 // A failed Velocity init is retried, at most this often.
 const VELOCITY_INIT_RETRY_MS = 60_000
-const MOD_VERSION = 'goodwait-claude-code/0.8.0'
+const MOD_VERSION = 'goodwait-claude-code/0.9.0'
 // The band shows the ad's body line only when there is room for it.
 const WIDE_COLUMNS = 110
 
@@ -80,7 +80,7 @@ const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
 const earner = atom({ plugin: 'goodwait', key: 'earner' } as const, null)
 
-type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number; velocityAdUnit: string; velocitySiteUrl: string }
+type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number; velocityAdUnit: string; velocitySiteUrl: string; invite: string }
 
 // Module state. A hot reload starts it over, which is fine: it only tracks
 // the turn in flight and the timers that belong to it.
@@ -210,7 +210,7 @@ async function ensureEarner($: EngineInterface, cfg: Config) {
   } else {
     let res
     try {
-      res = await postJson($, `${cfg.endpoint}/earner`, { ref: EARN_REF })
+      res = await postJson($, `${cfg.endpoint}/earner`, { ref: EARN_REF, ...(cfg.invite ? { invite: cfg.invite } : {}) })
     } catch {
       return
     }
@@ -279,6 +279,58 @@ async function setPayout($: EngineInterface, cfg: Config, email: string): Promis
     // keep what they typed
   }
   return `Payouts go to PayPal ${masked}.`
+}
+
+async function postEarner($: EngineInterface, cfg: Config, path: string, body: unknown) {
+  return await $.http.fetch(`${cfg.endpoint}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${earnerToken}` },
+    body: JSON.stringify(body),
+  })
+}
+
+async function donate($: EngineInterface, cfg: Config, amountArg: string): Promise<string> {
+  if (!earnerToken) return 'Earning is not set up on this install yet. Try again in a minute.'
+  const amount = amountArg ? Number(amountArg.replace(/^\$/, '')) : null
+  if (amountArg && (!Number.isFinite(amount) || (amount as number) <= 0)) return 'Use /earn donate to give your whole balance, or /earn donate 2.50 for part of it.'
+  let res
+  try {
+    res = await postEarner($, cfg, '/earner/donate', amount === null ? {} : { amount })
+  } catch {
+    return 'Could not reach the server. Try again in a minute.'
+  }
+  let j: { donated_usd?: number; balance_usd?: number; cause?: string; error?: string } = {}
+  try {
+    j = JSON.parse(res.text)
+  } catch {
+    // fall through to the generic message
+  }
+  if (res.status === 409) return 'Nothing to donate yet. Your balance fills as ad revenue is settled each month.'
+  if (!res.ok || typeof j.donated_usd !== 'number') return 'Could not donate right now. Try again in a minute.'
+  fire(fetchEarner($, cfg))
+  return `${money(j.donated_usd)} is going to ${j.cause ?? 'charity: water'}. Donations go out monthly and are published on the public ledger.`
+}
+
+async function setExit($: EngineInterface, cfg: Config, exit: 'cash' | 'donate'): Promise<string> {
+  if (!earnerToken) return 'Earning is not set up on this install yet. Try again in a minute.'
+  let res
+  try {
+    res = await postEarner($, cfg, '/earner/exit', { exit })
+  } catch {
+    return 'Could not reach the server. Try again in a minute.'
+  }
+  if (!res.ok) return 'Could not save it. Try again in a minute.'
+  fire(fetchEarner($, cfg))
+  return exit === 'donate'
+    ? 'From now on your earnings go straight to charity: water. Switch back any time with /earn exit cash.'
+    : 'From now on your earnings stay in your balance for PayPal. Switch any time with /earn exit donate.'
+}
+
+function referLine(me: GoodwaitEarner): string {
+  if (!me.referral_code) return 'Invites open soon.'
+  const pct = me.program.referral_pct ?? 10
+  const got = me.referrals ? ` ${num(me.referrals)} joined so far, ${money(me.referral_earned_usd ?? 0)} earned from them.` : ''
+  return `Your invite code: ${me.referral_code}. A friend sets it in /config (Invite code) before their first run. You get ${pct}% of what they earn, for life, paid from our half, never theirs.${got}`
 }
 
 // ------------------------------------------------------------------ ads
@@ -596,6 +648,8 @@ export const register: Register = (on, options) => {
       ? VELOCITY_DEFAULT_UNIT
       : /^[A-Za-z0-9_-]{4,64}$/.test(String(options.velocityAdUnit).trim()) ? String(options.velocityAdUnit).trim() : '',
     velocitySiteUrl: /^https:\/\/[^\s]+$/i.test(String(options.velocitySiteUrl ?? '')) ? String(options.velocitySiteUrl) : 'https://impact-wait.vercel.app',
+    // A friend's invite code, used once at sign-up.
+    invite: /^[a-z2-9]{8}$/.test(String(options.invite ?? '').trim().toLowerCase()) ? String(options.invite).trim().toLowerCase() : '',
   }
 
   on('session.start', async ($, e, next) => {
@@ -611,8 +665,8 @@ export const register: Register = (on, options) => {
     })
     await $.command.register({
       name: 'earn',
-      description: 'Your share of the ad revenue: see your balance, or set your PayPal for payouts.',
-      argumentHint: '[paypal you@example.com]',
+      description: 'Your share of the ad revenue: balance, PayPal, donate, invites.',
+      argumentHint: '[paypal you@example.com | donate [amount] | exit cash|donate | refer]',
     })
     earnerToken = ''
     earnerId = ''
@@ -884,15 +938,27 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'earn' }, async ($, e) => {
-    const m = e.args.trim().match(/^paypal\s+(\S+)$/i)
+    const args = e.args.trim()
+    const m = args.match(/^paypal\s+(\S+)$/i)
     if (m?.[1]) return { text: await setPayout($, cfg, m[1].toLowerCase()) }
-    if (e.args.trim()) return { text: 'Use /earn to see your balance, or /earn paypal you@example.com to set where payouts go.' }
+    const d = args.match(/^donate(?:\s+(\S+))?$/i)
+    if (d) return { text: await donate($, cfg, d[1] ?? '') }
+    const x = args.match(/^exit\s+(cash|donate)$/i)
+    if (x?.[1]) return { text: await setExit($, cfg, x[1].toLowerCase() as 'cash' | 'donate') }
+    if (/^(refer|invite)$/i.test(args)) {
+      const me = (await fetchEarner($, cfg)) ?? (await read($, earner))
+      return { text: me ? referLine(me) : 'Earning is not set up on this install yet. Try again in a minute.' }
+    }
+    if (args) return { text: 'Use /earn for your balance, /earn paypal you@example.com, /earn donate [amount], /earn exit cash|donate, or /earn refer.' }
     const me = (await fetchEarner($, cfg)) ?? (await read($, earner))
     fire(refreshStats($, cfg))
     await $.ui.open({ id: PANE, title: 'Goodwait' })
     if (!me) return { text: 'Earning is not set up on this install yet. Try again in a minute.' }
-    const payout = me.payout_email ? `PayPal ${me.payout_email}` : 'no PayPal set (/earn paypal you@example.com)'
-    return { text: `${earnerLine(me)} · ${money(me.paid_usd)} paid out · ${payout}` }
+    const payout = me.auto_exit === 'donate' ? 'earnings go to charity: water' : me.payout_email ? `PayPal ${me.payout_email}` : 'no PayPal set (/earn paypal you@example.com)'
+    const given = me.donated_usd ? ` · ${money(me.donated_usd)} donated` : ''
+    const draw = me.draw ? ` · ${num(me.draw.entries)} entries in the ${me.draw.name}` : ''
+    const invite = me.referral_code ? ` · invite code ${me.referral_code}` : ''
+    return { text: `${earnerLine(me)} · ${money(me.paid_usd)} paid out${given} · ${payout}${draw}${invite}` }
   })
 
   on('command.run', { command: 'goodwait' }, async ($, e) => {

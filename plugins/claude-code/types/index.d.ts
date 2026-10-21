@@ -72,7 +72,16 @@ export type GoodwaitEarner = {
   paid_usd: number
   payout_email: string | null
   est_pending_usd: number | null
-  program: { share_pct: number; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; est_ecpm_usd: number | null }
+  program: { share_pct: number; referral_pct?: number; min_payout_usd: number; hold_days?: number; daily_cap: number; min_gap_seconds: number; est_ecpm_usd: number | null }
+  // Present once the balance model is live on the server; older servers leave them out.
+  balance_usd?: number
+  donated_usd?: number
+  referral_code?: string
+  referrals?: number
+  referral_earned_usd?: number
+  auto_exit?: 'cash' | 'donate'
+  cash_out_from?: string | null
+  draw?: { name: string; prize_usd: number; closes_at: string; rules_url: string | null; entries: number } | null
   fetchedAt: number
 }
 

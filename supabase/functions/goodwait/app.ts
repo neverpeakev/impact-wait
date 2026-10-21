@@ -9,6 +9,12 @@
 //   POST /earner          {ref?}                         -> {earner_id, token} (token shown once; store it)
 //   GET  /earner/me       Authorization: Bearer <token>  -> credited waits, owed and paid USD, program terms
 //   POST /earner/payout   {email} + Bearer               -> sets the PayPal email payouts go to
+//   POST /earner/exit     {exit: "cash"|"donate"} + Bearer -> where new earnings go by default
+//   POST /earner/donate   {amount?} + Bearer             -> donates the balance (or part) to charity: water
+//   GET  /ledger                                         -> public totals: credited, paid out, donated
+//   POST /draw/free-entry {email}                        -> the no-purchase entry to the open draw
+// Referrals: POST /earner takes {invite: "<code>"}; the referrer earns 10% of the friend's share,
+// paid out of the house half at settlement (see settle()). Never multi-level.
 //   POST /impression/external {network, site, request_id, ad_id?, earner?} -> {ok, counted, credited}
 //        A view of an ad the client fetched straight from a network that must be called from the
 //        viewer's own device (Velocity): the client fires the network's impression URL itself and
@@ -24,8 +30,11 @@ export type Impact = { cause_name: string | null; cause_url: string | null; unit
 // Actual publisher earnings as a network's dashboard reported them (newest report per network).
 export type Earning = { network: string; site_key: string | null; earned_usd: number; paid_waits: number | null; clicks: number | null; as_of: Date | string; source: string };
 // Terms of the earner program, one row in the database.
-export type Program = { user_share_pct: number; est_ecpm_usd: number | null; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; max_earners_per_ip_day: number };
-export type EarnerSummary = { earner_id: string; status: string; credited_total: number; credited_today: number; pending_waits: number; owed_usd: number; paid_usd: number; payout_email: string | null; created_at: Date | string };
+export type Program = { user_share_pct: number; est_ecpm_usd: number | null; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; max_earners_per_ip_day: number; referral_pct: number; hold_days: number };
+export type EarnerSummary = { earner_id: string; status: string; credited_total: number; credited_today: number; pending_waits: number; owed_usd: number; paid_usd: number; payout_email: string | null; created_at: Date | string;
+  balance_usd: number; credited_usd: number; donated_usd: number; referral_code: string; referrals: number; referral_earned_usd: number; auto_exit: "cash" | "donate"; first_credit_at: Date | string | null };
+export type Ledger = { credited_to_users_usd: number; paid_out_usd: number; donated_usd: number; donation_pending_usd: number; people_paid: number; last_activity_at: Date | string | null };
+export type Draw = { id: string; name: string; prize_usd: number; opens_at: Date | string; closes_at: Date | string; rules_url: string | null };
 export interface Store {
   ensureSite(site: string, origin: string): Promise<boolean>;
   recentAds(ipHash: string, seconds: number): Promise<number>;
@@ -39,7 +48,17 @@ export interface Store {
   insertExternalImpression(row: { site_key: string; provider: string; tracking: Record<string, unknown>; ip_hash: string; origin: string; earner_id: string | null }): Promise<string | null>;
   program(): Promise<Program>;
   earnersFromIp(ipHash: string, seconds: number): Promise<number>;
-  createEarner(row: { token_hash: string; ip_hash: string; ref: string | null }): Promise<string>;
+  createEarner(row: { token_hash: string; ip_hash: string; ref: string | null; referred_by: string | null }): Promise<{ id: string; referral_code: string }>;
+  findReferrer(code: string): Promise<{ id: string; status: string; ip_hash: string | null } | null>;
+  referralsSince(referrerId: string, seconds: number): Promise<number>;
+  setAutoExit(earnerId: string, exit: "cash" | "donate"): Promise<void>;
+  // Atomic against the balance: donates min(amount, balance) (all of it when amount is null). Returns what was donated.
+  donate(earnerId: string, amount: number | null, cause: string): Promise<{ donated: number; balance: number }>;
+  ledger(): Promise<Ledger>;
+  openDraw(): Promise<Draw | null>;
+  drawEntries(drawId: string, earnerId: string): Promise<number>;
+  // "added", "already" (this email entered today) or "limited" (too many from this network today).
+  addFreeEntry(drawId: string, email: string, ipHash: string): Promise<"added" | "already" | "limited">;
   findEarner(tokenHash: string): Promise<{ id: string; status: string } | null>;
   // Atomic: credits the ad to the earner only if it is not credited yet, the earner has fewer than
   // dailyCap credits in the last 24h and none in the last gapSeconds. Returns whether it credited.
@@ -77,6 +96,11 @@ async function tokenHash(token: string) {
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 const TOKEN_RE = /^gw_[0-9a-f]{64}$/;
+const INVITE_RE = /^[a-z2-9]{8}$/;
+const MAX_REFERRALS_PER_DAY = 25;
+const CAUSE = "charity-water";
+const CAUSE_NAME = "charity: water";
+const money2 = (n: number) => Math.round(n * 100) / 100;
 function newToken() {
   const b = crypto.getRandomValues(new Uint8Array(32));
   return "gw_" + [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -214,10 +238,17 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         const ref = typeof b.ref === "string" && SITE_RE.test(b.ref.toLowerCase()) ? b.ref.toLowerCase() : null;
         const p = await store.program();
         if ((await store.earnersFromIp(ipHash, 86400)) >= p.max_earners_per_ip_day) return json({ error: "too many sign-ups from this network today" }, 429, { "Retry-After": "3600" });
+        // An invite only counts from someone else: an active referrer, not on this same network today,
+        // with a daily cap so one person can't farm sign-ups. A bad invite never blocks the sign-up.
+        let referredBy: string | null = null;
+        if (typeof b.invite === "string" && INVITE_RE.test(b.invite.toLowerCase())) {
+          const r = await store.findReferrer(b.invite.toLowerCase());
+          if (r && r.status === "active" && r.ip_hash !== ipHash && (await store.referralsSince(r.id, 86400)) < MAX_REFERRALS_PER_DAY) referredBy = r.id;
+        }
         const token = newToken();
-        const earner_id = await store.createEarner({ token_hash: await tokenHash(token), ip_hash: ipHash, ref });
-        log(`earner created ${earner_id}${ref ? " ref=" + ref : ""}`);
-        return json({ earner_id, token, share_pct: Number(p.user_share_pct) }, 201);
+        const made = await store.createEarner({ token_hash: await tokenHash(token), ip_hash: ipHash, ref, referred_by: referredBy });
+        log(`earner created ${made.id}${ref ? " ref=" + ref : ""}${referredBy ? " invited" : ""}`);
+        return json({ earner_id: made.id, token, share_pct: Number(p.user_share_pct), referral_code: made.referral_code, referred: !!referredBy }, 201);
       }
 
       if (route === "/earner/me" && req.method === "GET") {
@@ -225,16 +256,26 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (!token) return json({ error: "earner token required" }, 401);
         const e = await store.findEarner(await tokenHash(token));
         if (!e) return json({ error: "unknown earner" }, 401);
-        const [sum, p] = await Promise.all([store.earnerSummary(e.id), store.program()]);
+        const [sum, p, draw] = await Promise.all([store.earnerSummary(e.id), store.program(), store.openDraw()]);
         if (!sum) return json({ error: "unknown earner" }, 401);
         const ecpm = p.est_ecpm_usd === null ? null : Number(p.est_ecpm_usd);
+        const holdDays = Number(p.hold_days ?? 30);
+        const holdFrom = [sum.created_at, sum.first_credit_at].filter(Boolean).map((d) => new Date(d as string).getTime());
+        const holdUntil = holdFrom.length === 2 ? new Date(Math.max(...holdFrom) + holdDays * 86400e3).toISOString() : null;
         return json({
           ...sum,
+          first_credit_at: undefined,
           payout_email: maskEmail(sum.payout_email),
-          owed_usd: money4(Number(sum.owed_usd)),
+          owed_usd: money4(Number(sum.balance_usd)),
+          balance_usd: money4(Number(sum.balance_usd)),
+          credited_usd: money4(Number(sum.credited_usd)),
           paid_usd: money4(Number(sum.paid_usd)),
+          donated_usd: money4(Number(sum.donated_usd)),
+          referral_earned_usd: money4(Number(sum.referral_earned_usd)),
+          cash_out_from: holdUntil,
           est_pending_usd: ecpm === null ? null : money4((sum.pending_waits / 1000) * ecpm * (Number(p.user_share_pct) / 100)),
-          program: { share_pct: Number(p.user_share_pct), min_payout_usd: Number(p.min_payout_usd), daily_cap: p.daily_cap, min_gap_seconds: p.min_gap_seconds, est_ecpm_usd: ecpm },
+          draw: draw ? { name: draw.name, prize_usd: Number(draw.prize_usd), closes_at: draw.closes_at, rules_url: draw.rules_url, entries: await store.drawEntries(draw.id, e.id) } : null,
+          program: { share_pct: Number(p.user_share_pct), referral_pct: Number(p.referral_pct ?? 10), min_payout_usd: Number(p.min_payout_usd), hold_days: holdDays, daily_cap: p.daily_cap, min_gap_seconds: p.min_gap_seconds, est_ecpm_usd: ecpm },
         }, 200, { "Cache-Control": "no-store" });
       }
 
@@ -248,6 +289,55 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (email.length > 254 || !EMAIL_RE.test(email)) return json({ error: "a valid PayPal email is required" }, 400);
         await store.setPayoutEmail(e.id, email);
         return json({ ok: true, payout_email: maskEmail(email) });
+      }
+
+      if (route === "/earner/exit" && req.method === "POST") {
+        const token = bearer(req);
+        if (!token) return json({ error: "earner token required" }, 401);
+        const e = await store.findEarner(await tokenHash(token));
+        if (!e) return json({ error: "unknown earner" }, 401);
+        const b = await req.json().catch(() => ({}));
+        if (b.exit !== "cash" && b.exit !== "donate") return json({ error: "exit must be cash or donate" }, 400);
+        await store.setAutoExit(e.id, b.exit);
+        return json({ ok: true, auto_exit: b.exit });
+      }
+
+      if (route === "/earner/donate" && req.method === "POST") {
+        const token = bearer(req);
+        if (!token) return json({ error: "earner token required" }, 401);
+        const e = await store.findEarner(await tokenHash(token));
+        if (!e || e.status !== "active") return json({ error: "unknown earner" }, 401);
+        const b = await req.json().catch(() => ({}));
+        let amount: number | null = null;
+        if (b.amount !== undefined && b.amount !== null) {
+          amount = Number(b.amount);
+          if (!Number.isFinite(amount) || amount <= 0) return json({ error: "amount must be a positive number of dollars" }, 400);
+          amount = Math.floor(amount * 10000) / 10000;
+        }
+        const r = await store.donate(e.id, amount, CAUSE);
+        if (r.donated <= 0) return json({ error: "nothing to donate yet: your balance fills as ad revenue is settled", balance_usd: money4(r.balance) }, 409);
+        log(`donation queued ${money4(r.donated)} to ${CAUSE}`);
+        return json({ ok: true, donated_usd: money4(r.donated), balance_usd: money4(r.balance), cause: CAUSE_NAME });
+      }
+
+      if (route === "/ledger" && req.method === "GET") {
+        const l = await store.ledger();
+        return json({
+          credited_to_users_usd: money2(Number(l.credited_to_users_usd)), paid_out_usd: money2(Number(l.paid_out_usd)),
+          donated_usd: money2(Number(l.donated_usd)), donation_pending_usd: money2(Number(l.donation_pending_usd)),
+          people_paid: Number(l.people_paid), last_activity_at: l.last_activity_at, cause: CAUSE_NAME,
+        }, 200, { "Cache-Control": "public, max-age=60" });
+      }
+
+      if (route === "/draw/free-entry" && req.method === "POST") {
+        const b = await req.json().catch(() => ({}));
+        const email = String(b.email || "").trim().toLowerCase();
+        if (email.length > 254 || !EMAIL_RE.test(email)) return json({ error: "Enter a valid email address." }, 400);
+        const d = await store.openDraw();
+        if (!d) return json({ error: "There's no draw open right now." }, 409);
+        const r = await store.addFreeEntry(d.id, email, ipHash);
+        if (r === "limited") return json({ error: "Too many entries from this network today." }, 429);
+        return json({ ok: true, entered: r === "added", already_today: r === "already", draw: d.name });
       }
 
       if (route === "/stats" && req.method === "GET") {

@@ -1,6 +1,6 @@
 // Postgres-backed Store. Tables live in the private impact_wait schema (not exposed via the REST API).
 import postgres from "npm:postgres@3.4.5";
-import type { AdRow, EarnerSummary, Impact, Program, Store } from "./app.ts";
+import type { AdRow, Draw, EarnerSummary, Impact, Ledger, Program, Store } from "./app.ts";
 
 export function pgStore(dbUrl: string): Store {
   const sql = postgres(dbUrl, { max: 3, prepare: false, idle_timeout: 20 });
@@ -49,7 +49,7 @@ export function pgStore(dbUrl: string): Store {
     },
     async program() {
       const [r] = await sql`select user_share_pct::float8 as user_share_pct, est_ecpm_usd::float8 as est_ecpm_usd, min_payout_usd::float8 as min_payout_usd,
-        daily_cap, min_gap_seconds, max_earners_per_ip_day from impact_wait.program where id = 1`;
+        daily_cap, min_gap_seconds, max_earners_per_ip_day, referral_pct::float8 as referral_pct, hold_days from impact_wait.program where id = 1`;
       return r as unknown as Program;
     },
     async earnersFromIp(ipHash, seconds) {
@@ -57,8 +57,61 @@ export function pgStore(dbUrl: string): Store {
       return r.n;
     },
     async createEarner(row) {
-      const [r] = await sql`insert into impact_wait.earners (token_hash, ip_hash, ref) values (${row.token_hash}, ${row.ip_hash}, ${row.ref}) returning id`;
-      return r.id;
+      // The referral code comes from the column default; a rare collision just retries.
+      for (let i = 0; ; i++) {
+        try {
+          const [r] = await sql`insert into impact_wait.earners (token_hash, ip_hash, ref, referred_by)
+            values (${row.token_hash}, ${row.ip_hash}, ${row.ref}, ${row.referred_by}) returning id, referral_code`;
+          return { id: r.id, referral_code: r.referral_code };
+        } catch (e) {
+          if (i < 3 && (e as { code?: string; constraint_name?: string }).code === "23505" && /referral_code/.test(String((e as { constraint_name?: string }).constraint_name))) continue;
+          throw e;
+        }
+      }
+    },
+    async findReferrer(code) {
+      const [r] = await sql`select id, status, ip_hash from impact_wait.earners where referral_code = ${code}`;
+      return r ? { id: r.id, status: r.status, ip_hash: r.ip_hash } : null;
+    },
+    async referralsSince(referrerId, seconds) {
+      const [r] = await sql`select count(*)::int as n from impact_wait.earners where referred_by = ${referrerId} and created_at > now() - make_interval(secs => ${seconds})`;
+      return r.n;
+    },
+    async setAutoExit(earnerId, exit) {
+      await sql`update impact_wait.earners set auto_exit = ${exit} where id = ${earnerId}`;
+    },
+    async donate(earnerId, amount, cause) {
+      return await sql.begin(async (tx: any) => {
+        await tx`select pg_advisory_xact_lock(hashtext(${earnerId}::text))`;
+        const [b] = await tx`select balance_usd::float8 as balance from impact_wait.balances where earner_id = ${earnerId}`;
+        const balance = b ? Number(b.balance) : 0;
+        const give = Math.floor(Math.min(amount ?? balance, balance) * 10000) / 10000;
+        if (give <= 0) return { donated: 0, balance };
+        await tx`insert into impact_wait.redemptions (earner_id, kind, amount_usd, cause, status, method)
+          values (${earnerId}, 'donate', ${give}, ${cause}, 'pending', 'user')`;
+        return { donated: give, balance: Math.round((balance - give) * 10000) / 10000 };
+      });
+    },
+    async ledger() {
+      const [r] = await sql`select credited_to_users_usd::float8 as credited_to_users_usd, paid_out_usd::float8 as paid_out_usd, donated_usd::float8 as donated_usd,
+        donation_pending_usd::float8 as donation_pending_usd, people_paid::int as people_paid, last_activity_at from impact_wait.public_ledger`;
+      return r as unknown as Ledger;
+    },
+    async openDraw() {
+      const [r] = await sql`select id, name, prize_usd::float8 as prize_usd, opens_at, closes_at, rules_url from impact_wait.draws
+        where status = 'open' and now() >= opens_at and now() < closes_at order by closes_at limit 1`;
+      return (r as unknown as Draw) || null;
+    },
+    async drawEntries(drawId, earnerId) {
+      const [r] = await sql`select coalesce(sum(entries), 0)::int as n from impact_wait.draw_entries where draw_id = ${drawId} and entrant_key = ${"earner:" + earnerId}`;
+      return r.n;
+    },
+    async addFreeEntry(drawId, email, ipHash) {
+      const [c] = await sql`select count(*)::int as n from impact_wait.draw_free_entries where ip_hash = ${ipHash} and created_at > now() - interval '1 day'`;
+      if (c.n >= 5) return "limited";
+      const rows = await sql`insert into impact_wait.draw_free_entries (draw_id, email, ip_hash) values (${drawId}, ${email}, ${ipHash})
+        on conflict (draw_id, email, entry_day) do nothing returning id`;
+      return rows.length ? "added" : "already";
     },
     async findEarner(tokenHash) {
       const [r] = await sql`select id, status from impact_wait.earners where token_hash = ${tokenHash}`;
@@ -78,13 +131,18 @@ export function pgStore(dbUrl: string): Store {
       });
     },
     async earnerSummary(earnerId) {
-      const [r] = await sql`select e.id as earner_id, e.status, e.payout_email, e.created_at,
+      const [r] = await sql`select e.id as earner_id, e.status, e.payout_email, e.created_at, e.referral_code, e.auto_exit,
           (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited) as credited_total,
           (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited and a.impression_at > now() - interval '24 hours') as credited_today,
           (select count(*)::int from impact_wait.ads a where a.earner_id = e.id and a.credited and a.settlement_id is null) as pending_waits,
-          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.earner_payouts p where p.earner_id = e.id and p.status = 'owed') as owed_usd,
-          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.earner_payouts p where p.earner_id = e.id and p.status = 'paid') as paid_usd
-        from impact_wait.earners e where e.id = ${earnerId}`;
+          (select min(a.impression_at) from impact_wait.ads a where a.earner_id = e.id and a.credited) as first_credit_at,
+          b.balance_usd::float8 as balance_usd, b.credited_usd::float8 as credited_usd, b.balance_usd::float8 as owed_usd,
+          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.redemptions r where r.earner_id = e.id and r.kind = 'cash' and r.status = 'paid') as paid_usd,
+          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.redemptions r where r.earner_id = e.id and r.kind = 'donate' and r.status <> 'void') as donated_usd,
+          (select count(*)::int from impact_wait.earners f where f.referred_by = e.id) as referrals,
+          (select coalesce(sum(amount_usd), 0)::float8 from impact_wait.earner_payouts p where p.earner_id = e.id and p.kind = 'referral' and p.status <> 'void') as referral_earned_usd
+        from impact_wait.earners e join impact_wait.balances b on b.earner_id = e.id
+        where e.id = ${earnerId}`;
       return (r as unknown as EarnerSummary) || null;
     },
     async setPayoutEmail(earnerId, email) {

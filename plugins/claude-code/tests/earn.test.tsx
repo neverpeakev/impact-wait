@@ -85,6 +85,20 @@ function bottom(on: On, w: World) {
       w.payoutEmail = `${email[0]}***@${email.split('@')[1]}`
       return res(200, { ok: true, payout_email: w.payoutEmail })
     }
+    if (e.url.endsWith('/earner/donate')) {
+      if (!authed) return res(401, {})
+      const bal = Number(w.me.balance_usd ?? 0)
+      const amt = JSON.parse(e.init?.body ?? '{}').amount
+      const give = Math.min(amt ?? bal, bal)
+      if (give <= 0) return res(409, { error: 'nothing to donate yet' })
+      w.me = { ...w.me, balance_usd: bal - give, owed_usd: bal - give, donated_usd: Number(w.me.donated_usd ?? 0) + give }
+      return res(200, { ok: true, donated_usd: give, balance_usd: bal - give, cause: 'charity: water' })
+    }
+    if (e.url.endsWith('/earner/exit')) {
+      if (!authed) return res(401, {})
+      w.me = { ...w.me, auto_exit: JSON.parse(e.init?.body ?? '{}').exit }
+      return res(200, { ok: true })
+    }
     if (e.url.endsWith('/ad')) return res(200, AD_RESPONSE)
     if (e.url.endsWith('/event')) {
       const credited = w.creditNext
@@ -218,4 +232,68 @@ test('a subagent turn never takes over the band or the ad request', async ($, on
   expect(JSON.parse(ads[0]!.body ?? '{}').query).toBe('refactor the payments module')
   await tick(clock, 1000) // the impression still counts for the main turn
   expect(w.fetched.some(f => f.url.endsWith('/event'))).toBe(true)
+})
+
+test('/earn refer shows the invite code and the deal; sign-up sends a configured invite', { options: { invite: 'ABCD2345' } }, async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.me = { ...w.me, referral_code: 'xk7m2pqr', referrals: 2, referral_earned_usd: 0.4, program: { ...(w.me.program as object), referral_pct: 10 } }
+  bottom(on, w)
+  await start($, clock)
+  const signup = w.fetched.find(f => f.url.endsWith('/earner') && f.body)
+  expect(JSON.parse(signup!.body ?? '{}')).toEqual({ ref: 'claude-code-mod', invite: 'abcd2345' })
+  const r = await $.command.run({ command: 'earn', args: 'refer', ...RUN })
+  expect(r.text).toBe('Your invite code: xk7m2pqr. A friend sets it in /config (Invite code) before their first run. You get 10% of what they earn, for life, paid from our half, never theirs. 2 joined so far, $0.40 earned from them.')
+})
+
+test('a malformed invite in config is never sent', { options: { invite: 'not valid!' } }, async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await start($, clock)
+  const signup = w.fetched.find(f => f.url.endsWith('/earner') && f.body)
+  expect(JSON.parse(signup!.body ?? '{}')).toEqual({ ref: 'claude-code-mod' })
+})
+
+test('/earn donate gives the balance (or part); with nothing settled it says so plainly', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await start($, clock)
+  const none = await $.command.run({ command: 'earn', args: 'donate', ...RUN })
+  expect(none.text).toBe('Nothing to donate yet. Your balance fills as ad revenue is settled each month.')
+  w.me = { ...w.me, balance_usd: 4, owed_usd: 4 }
+  const part = await $.command.run({ command: 'earn', args: 'donate $1.50', ...RUN })
+  expect(part.text).toBe('$1.50 is going to charity: water. Donations go out monthly and are published on the public ledger.')
+  expect(JSON.parse(w.fetched.filter(f => f.url.endsWith('/earner/donate')).at(-1)!.body ?? '{}')).toEqual({ amount: 1.5 })
+  const bad = await $.command.run({ command: 'earn', args: 'donate lots', ...RUN })
+  expect(bad.text).toMatch(/^Use \/earn donate/)
+  const rest = await $.command.run({ command: 'earn', args: 'donate', ...RUN })
+  expect(rest.text).toBe('$2.50 is going to charity: water. Donations go out monthly and are published on the public ledger.')
+})
+
+test('/earn exit donate switches where earnings go, and /earn says so', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await start($, clock)
+  const r = await $.command.run({ command: 'earn', args: 'exit donate', ...RUN })
+  expect(r.text).toBe('From now on your earnings go straight to charity: water. Switch back any time with /earn exit cash.')
+  const bal = await $.command.run({ command: 'earn', args: '', ...RUN })
+  expect(bal.text).toMatch(/ · earnings go to charity: water$/)
+})
+
+test('/earn shows draw entries and the invite code when the server sends them', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.me = { ...w.me, referral_code: 'xk7m2pqr', draw: { name: 'Launch draw', prize_usd: 1000, closes_at: '2026-12-01T00:00:00Z', rules_url: 'https://example.com/rules', entries: 42 } }
+  bottom(on, w)
+  await start($, clock)
+  const bal = await $.command.run({ command: 'earn', args: '', ...RUN })
+  expect(bal.text).toMatch(/ · 42 entries in the Launch draw · invite code xk7m2pqr$/)
 })
