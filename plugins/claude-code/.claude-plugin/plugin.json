@@ -1,6 +1,6 @@
 {
   "name": "goodwait",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Goodwait for Claude Code: a sponsored line above the prompt while Claude works, and you earn a share of the ad revenue from your own waits (/earn).",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -33,6 +33,18 @@
       "title": "Presence window (seconds)",
       "description": "Ads rotate only within this long after your last prompt, keystroke in the prompt box, or press in the Goodwait band or pane. After that one ad stays up and no new views are counted.",
       "default": 120
+    },
+    "velocityAdUnit": {
+      "type": "string",
+      "title": "Velocity ad unit ID",
+      "description": "The Velocity native ad unit for this placement. Empty = Velocity off (the Goodwait API's own ads only).",
+      "default": ""
+    },
+    "velocitySiteUrl": {
+      "type": "string",
+      "title": "Velocity site URL",
+      "description": "The site or app URL this placement is registered under in Velocity.",
+      "default": "https://impact-wait.vercel.app"
     }
   },
   "author": {

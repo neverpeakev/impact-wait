@@ -162,3 +162,49 @@ Deno.test("CORS allows the Authorization header", async () => {
   const r = await t.call("/earner/me", { method: "OPTIONS" });
   assertMatch(r.headers.get("access-control-allow-headers") || "", /authorization/);
 });
+
+Deno.test("external impression: a client-reported Velocity view counts once and credits the earner", async () => {
+  const t = mk({ fill: false });
+  const { token, earner_id } = await (await t.signup()).json();
+  const body = (rid: string, extra: Record<string, unknown> = {}) => JSON.stringify({ network: "velocity", site: "claude-code", request_id: rid, ad_id: "vad1", earner: token, ...extra });
+  const r1 = await (await t.call("/impression/external", { method: "POST", body: body("req-00000001") })).json();
+  assertEquals(r1, { ok: true, counted: true, credited: true });
+  const row = [...t.store.ads.values()].find((a) => a.provider === "velocity")!;
+  assertEquals([row.earner_id, row.live, row.impression_at !== null, (row.tracking as any).clientReported], [earner_id, true, true, true]);
+  // The same request id again: ignored, not double counted.
+  const dup = await (await t.call("/impression/external", { method: "POST", body: body("req-00000001") })).json();
+  assertEquals(dup, { ok: true, counted: false, duplicate: true });
+  assertEquals((await (await t.me(token)).json()).credited_total, 1);
+  const st = await (await t.call("/stats?site=claude-code")).json();
+  assertEquals([st.site.sponsored_waits, st.site.paid_waits], [1, 1]);
+});
+
+Deno.test("external impression: the credit gap applies across networks; no earner still counts", async () => {
+  const t = mk();
+  const { token } = await (await t.signup()).json();
+  assertEquals((await t.view(token)).ev.credited, true); // a server-side network view
+  const r = await (await t.call("/impression/external", { method: "POST", body: JSON.stringify({ network: "velocity", site: "claude-code", request_id: "req-00000002", earner: token }) })).json();
+  assertEquals(r, { ok: true, counted: true, credited: false }); // inside the 15s gap
+  const anon = await (await t.call("/impression/external", { method: "POST", body: JSON.stringify({ network: "velocity", site: "claude-code", request_id: "req-00000003" }) })).json();
+  assertEquals(anon, { ok: true, counted: true, credited: false });
+});
+
+Deno.test("external impression: unknown networks, bad ids and dev hosts are refused or not counted", async () => {
+  const t = mk();
+  const post = (b: unknown, origin?: string) => t.call("/impression/external", { method: "POST", body: JSON.stringify(b) }, "1.1.1.1", origin);
+  assertEquals((await post({ network: "idlen", site: "claude-code", request_id: "req-00000004" })).status, 400);
+  assertEquals((await post({ network: "velocity", site: "claude-code", request_id: "x" })).status, 400);
+  assertEquals((await post({ network: "velocity", site: "Bad Site", request_id: "req-00000005" })).status, 400);
+  const dev = await (await post({ network: "velocity", site: "claude-code", request_id: "req-00000006" }, "http://localhost:3000")).json();
+  assertEquals(dev, { ok: true, counted: false, sandbox: true });
+  assertEquals([...t.store.ads.values()].filter((a) => a.provider === "velocity").length, 0);
+});
+
+Deno.test("external impression: rate limited per network like ad requests", async () => {
+  const t = mk();
+  let last = 0;
+  for (let i = 0; i < 31; i++) {
+    last = (await t.call("/impression/external", { method: "POST", body: JSON.stringify({ network: "velocity", site: "claude-code", request_id: `req-rl-${String(i).padStart(4, "0")}` }) })).status;
+  }
+  assertEquals(last, 429);
+});

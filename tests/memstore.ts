@@ -22,6 +22,13 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
       for (const a of open) { a.settlement_id = sid; by.set(a.earner_id, (by.get(a.earner_id) || 0) + 1); }
       for (const [earner_id, n] of by) payouts.push({ settlement_id: sid, earner_id, credited_waits: n, amount_usd: Math.round(actualUsd * (prog.user_share_pct / 100) * n / open.length * 1e4) / 1e4, status: "owed" });
     },
+    async insertExternalImpression(row) {
+      const key = String(row.tracking.requestId);
+      if ([...ads.values()].some((a) => a.provider === row.provider && a.tracking?.requestId === key && a.tracking?.clientReported)) return null;
+      const id = crypto.randomUUID();
+      ads.set(id, { id, ...row, live: true, click_url: null, created_at: new Date(), impression_at: new Date(), click_at: null });
+      return id;
+    },
     async program() { return prog; },
     async earnersFromIp(ipHash, seconds) {
       const cut = Date.now() - seconds * 1000;

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitImpact, GoodwaitStats } from '../types'
+import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, GoodwaitImpact, GoodwaitStats } from '../types'
 
 // Goodwait for Claude Code.
 // While a turn runs, one labeled sponsored line sits above the prompt. It
@@ -32,6 +32,13 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitImpact, Goodw
 // prompt, keystroke in the prompt box or press in the mod's band or pane.
 // Nobody around, nothing rotates: one ad stays up and no new view is counted.
 //
+// Velocity: with an ad unit set (the velocityAdUnit setting), the mod asks
+// Velocity for the ad straight from this machine, so the request comes from the
+// person's own connection, as Velocity's browser SDK does. A view fires
+// Velocity's impression URL from here too, then is reported to the Goodwait API
+// once (by Velocity's request id) so it counts and credits. No fill, an error
+// or a slow answer falls back to the Goodwait API's own ads.
+//
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
 // matching line. Nothing else. The site key defaults to "claude-code" (the
@@ -54,6 +61,10 @@ const MILESTONES = [10, 50, 100, 250, 500, 1000]
 const EARNER_KEY = 'goodwait.earner'
 const TOKEN_RE = /^gw_[0-9a-f]{64}$/
 const EARN_REF = 'claude-code-mod'
+const VELOCITY_GW = 'https://gw.vlcapi.net'
+const VELOCITY_KEY = 'b9fb08c9ea6c' // Never Peak's Velocity publisher key (a public client id)
+const VELOCITY_TIMEOUT_MS = 2500
+const MOD_VERSION = 'goodwait-claude-code/0.7.0'
 // The band shows the ad's body line only when there is room for it.
 const WIDE_COLUMNS = 110
 
@@ -64,7 +75,7 @@ const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
 const earner = atom({ plugin: 'goodwait', key: 'earner' } as const, null)
 
-type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number }
+type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number; velocityAdUnit: string; velocitySiteUrl: string }
 
 // Module state. A hot reload starts it over, which is fine: it only tracks
 // the turn in flight and the timers that belong to it.
@@ -81,6 +92,10 @@ let rotateTimer: Timer | null = null
 let rotations = 0
 let idleTicks = 0
 let turnText = ''
+// Velocity, per session: whether init succeeded, and the ad unit depth it expects.
+let velocityReady: Promise<boolean> | null = null
+let velocityDepth = 1
+let earnerId = ''
 
 function money(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -185,6 +200,7 @@ async function ensureEarner($: EngineInterface, cfg: Config) {
   const saved = (await $.store.get(EARNER_KEY)) as { id?: string; token?: string } | undefined
   if (saved && typeof saved.token === 'string' && TOKEN_RE.test(saved.token)) {
     earnerToken = saved.token
+    earnerId = typeof saved.id === 'string' ? saved.id : ''
   } else {
     let res
     try {
@@ -201,6 +217,7 @@ async function ensureEarner($: EngineInterface, cfg: Config) {
     }
     if (!j.token || !TOKEN_RE.test(j.token)) return
     earnerToken = j.token
+    earnerId = typeof j.earner_id === 'string' ? j.earner_id : ''
     await $.store.set(EARNER_KEY, { id: j.earner_id, token: j.token })
     $.ui.toast(`You now earn ${j.share_pct ?? 50}% of the ad revenue from your waits. /earn to see it.`, { timeoutMs: 8000 })
   }
@@ -265,7 +282,9 @@ async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   if (!shown || shown.id !== id || (await read($, isHidden))) return
   let counted = false
   let credited = false
-  try {
+  if (shown.external) {
+    ;({ counted, credited } = await reportExternal($, cfg, shown.external))
+  } else try {
     const r = await postJson($, `${cfg.endpoint}/event`, { id, type: 'impression' })
     try {
       const j = JSON.parse(r.text)
@@ -295,10 +314,165 @@ async function reportImpression($: EngineInterface, cfg: Config, id: string) {
   scheduleRotation($, cfg, shown.turnId)
 }
 
+// ------------------------------------------------------------- velocity
+
+function velocityMetadata(cfg: Config) {
+  let timezone = 'UTC'
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    // keep UTC
+  }
+  let domainName = ''
+  try {
+    domainName = new URL(cfg.velocitySiteUrl).hostname
+  } catch {
+    // no domain
+  }
+  return {
+    platform: 'web',
+    sdkVersion: MOD_VERSION,
+    timestamp: Date.now(),
+    timezone,
+    webMetadata: { ...(domainName ? { domainName } : {}), fullUrl: cfg.velocitySiteUrl },
+  }
+}
+
+// Resolves to null after ms, so a slow network never holds the line.
+function within<T>($: EngineInterface, p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const t = $.clock.after(ms, () => resolve(null))
+    p.then(
+      v => {
+        t.cancel()
+        resolve(v)
+      },
+      () => {
+        t.cancel()
+        resolve(null)
+      },
+    )
+  })
+}
+
+async function velocityInit($: EngineInterface, cfg: Config): Promise<boolean> {
+  try {
+    const r = await postJson($, `${VELOCITY_GW}/init`, {
+      publisherKey: VELOCITY_KEY,
+      consent: null,
+      metadata: velocityMetadata(cfg),
+      ...(earnerId ? { publisherUserId: earnerId } : {}),
+    })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
+const httpsOnly = (u: unknown): string => (typeof u === 'string' && /^https:\/\//i.test(u) ? u : '')
+
+// One native ad from Velocity for this prompt, or null (no fill, error, slow).
+async function velocityAd($: EngineInterface, cfg: Config, query: string): Promise<{ ad: GoodwaitAd; external: GoodwaitExternal } | null> {
+  if (!cfg.velocityAdUnit) return null
+  if (!velocityReady) velocityReady = velocityInit($, cfg)
+  const ready = await within($, velocityReady, VELOCITY_TIMEOUT_MS)
+  if (!ready) return null
+  const res = await within(
+    $,
+    postJson($, `${VELOCITY_GW}/v2/load`, {
+      publisherKey: VELOCITY_KEY,
+      sessionId,
+      prompt: query,
+      additionalContext: 'A software developer working in Claude Code, an AI coding agent in the terminal.',
+      adUnitId: cfg.velocityAdUnit,
+      adUnitDepth: velocityDepth,
+      adType: 'native_ad',
+      adSize: 'S',
+      biddingTokens: {},
+      consent: null,
+      metadata: velocityMetadata(cfg),
+      ...(earnerId ? { publisherUserId: earnerId } : {}),
+    }),
+    VELOCITY_TIMEOUT_MS,
+  )
+  if (!res || !res.ok || res.status === 204) return null
+  let j: { requestId?: string; ads?: { adPayload?: Record<string, unknown> }[] }
+  try {
+    j = JSON.parse(res.text)
+  } catch {
+    return null
+  }
+  const p = j.ads?.[0]?.adPayload
+  const impressionUrl = httpsOnly(p?.impressionUrl)
+  const clickUrl = httpsOnly(p?.clickUrl)
+  const requestId = typeof j.requestId === 'string' ? j.requestId : ''
+  if (!p || !impressionUrl || !clickUrl || !/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) return null
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const headline = str(p.title) || str(p.advertiserName)
+  if (!headline) return null
+  return {
+    ad: {
+      provider: 'velocity',
+      label: str(p.sponsoredLabel) || 'Sponsored',
+      brand: str(p.advertiserName),
+      headline,
+      body: str(p.description),
+      cta: str(p.callToAction) || 'Learn more',
+      clickUrl,
+    },
+    external: { network: 'velocity', requestId, adId: str(p.id) || null, impressionUrl },
+  }
+}
+
+// Fires Velocity's impression from this machine, then reports the view once.
+async function reportExternal($: EngineInterface, cfg: Config, ext: GoodwaitExternal): Promise<{ counted: boolean; credited: boolean }> {
+  try {
+    await $.http.fetch(ext.impressionUrl)
+  } catch {
+    return { counted: false, credited: false } // Velocity did not get the view: claim nothing
+  }
+  velocityDepth += 1
+  try {
+    const r = await postJson($, `${cfg.endpoint}/impression/external`, {
+      network: ext.network,
+      site: cfg.site,
+      request_id: ext.requestId,
+      ad_id: ext.adId,
+      ...(earnerToken ? { earner: earnerToken } : {}),
+    })
+    const j = JSON.parse(r.text)
+    return { counted: r.ok && j.counted === true, credited: r.ok && j.credited === true }
+  } catch {
+    return { counted: true, credited: false } // Velocity counted it; our counter missed it
+  }
+}
+
 async function fetchAd($: EngineInterface, cfg: Config, turnId: string, text: string) {
   if (await read($, isHidden)) return
   const query = text.replace(/\s+/g, ' ').trim().slice(0, QUERY_CHARS)
   if (!query) return
+
+  const v = await velocityAd($, cfg, query)
+  if (v) {
+    if (activeTurn !== turnId) return
+    const prev = await read($, current)
+    const next: GoodwaitCurrent = {
+      id: `velocity:${v.external.requestId}`,
+      turnId,
+      ad: v.ad,
+      impact: prev?.impact ?? { cause_name: null, cause_url: null, pledge_pct: null, donated_usd: 0, sponsored_waits: (await read($, stats))?.total.sponsored_waits ?? 0 },
+      sandbox: false,
+      impressed: false,
+      external: v.external,
+    }
+    await update($, current, () => next)
+    impressionTimer?.cancel()
+    impressionTimer = $.clock.after(IMPRESSION_MS, () => {
+      fire(reportImpression($, cfg, next.id))
+    })
+    return
+  }
+
   let res
   try {
     res = await postJson($, `${cfg.endpoint}/ad`, { site: cfg.site, query, sessionId, ...(earnerToken ? { earner: earnerToken } : {}) })
@@ -400,6 +574,8 @@ export const register: Register = (on, options) => {
       return Math.max(MIN_ROTATE_SECONDS, n)
     })(),
     presenceSeconds: Number.isFinite(Number(options.presenceSeconds)) && Number(options.presenceSeconds) > 0 ? Number(options.presenceSeconds) : 120,
+    velocityAdUnit: /^[A-Za-z0-9_-]{4,64}$/.test(String(options.velocityAdUnit ?? '').trim()) ? String(options.velocityAdUnit).trim() : '',
+    velocitySiteUrl: /^https:\/\/[^\s]+$/i.test(String(options.velocitySiteUrl ?? '')) ? String(options.velocitySiteUrl) : 'https://impact-wait.vercel.app',
   }
 
   on('session.start', async ($, e, next) => {
@@ -419,6 +595,9 @@ export const register: Register = (on, options) => {
       argumentHint: '[paypal you@example.com]',
     })
     earnerToken = ''
+    earnerId = ''
+    velocityReady = null
+    velocityDepth = 1
     $.clock.after(0, () => {
       fire(ensureEarner($, cfg))
     })

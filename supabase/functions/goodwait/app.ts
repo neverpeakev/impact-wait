@@ -9,6 +9,10 @@
 //   POST /earner          {ref?}                         -> {earner_id, token} (token shown once; store it)
 //   GET  /earner/me       Authorization: Bearer <token>  -> credited waits, owed and paid USD, program terms
 //   POST /earner/payout   {email} + Bearer               -> sets the PayPal email payouts go to
+//   POST /impression/external {network, site, request_id, ad_id?, earner?} -> {ok, counted, credited}
+//        A view of an ad the client fetched straight from a network that must be called from the
+//        viewer's own device (Velocity): the client fires the network's impression URL itself and
+//        reports it here once, keyed by the network's request id, so it counts and credits.
 // /ad takes an optional {earner: token}; a paid, counted impression on that ad is credited
 // to the earner, within the program's daily cap and minimum gap. Money is only ever owed
 // from settled network revenue (see the settle() SQL function), never from estimates.
@@ -30,6 +34,9 @@ export interface Store {
   claimImpression(id: string, minAgeMs: number): Promise<AdRow | null>;
   finishImpression(id: string, site: string, confirmStatus: number, paid: boolean): Promise<void>;
   claimClick(id: string): Promise<{ row: AdRow; first: boolean } | null>;
+  // Records an already-seen impression of a client-fetched ad. Returns null when this
+  // (provider, requestId) was reported before.
+  insertExternalImpression(row: { site_key: string; provider: string; tracking: Record<string, unknown>; ip_hash: string; origin: string; earner_id: string | null }): Promise<string | null>;
   program(): Promise<Program>;
   earnersFromIp(ipHash: string, seconds: number): Promise<number>;
   createEarner(row: { token_hash: string; ip_hash: string; ref: string | null }): Promise<string>;
@@ -44,6 +51,9 @@ export interface Store {
 export type Keys = { idlen?: string; admesh?: string; agentads?: string };
 
 const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
+// Networks whose ads the client fetches and whose impressions the client fires itself.
+const EXTERNAL_NETWORKS = new Set(["velocity"]);
+const REQUEST_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
 // Local development never touches paid networks or the public counter.
 export const SANDBOX_SITE = "sandbox";
 const DEV_HOST_RE = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\]|[a-z0-9.-]+\.(?:local|localhost|internal))$/i;
@@ -160,6 +170,33 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           credited = await store.creditImpression(id, row.earner_id, p.daily_cap, p.min_gap_seconds);
         }
         log(`impression site=${row.site_key} provider=${row.provider} confirm=${status}${row.earner_id ? ` earner credited=${credited}` : ""}`);
+        return json({ ok: true, counted: true, credited });
+      }
+
+      if (route === "/impression/external" && req.method === "POST") {
+        const b = await req.json().catch(() => ({}));
+        const network = String(b.network || "");
+        const site = String(b.site || "").toLowerCase();
+        const requestId = String(b.request_id || "");
+        if (!EXTERNAL_NETWORKS.has(network) || !SITE_RE.test(site) || !REQUEST_ID_RE.test(requestId)) return json({ error: "bad impression" }, 400);
+        if (isDevOrigin(origin, site)) return json({ ok: true, counted: false, sandbox: true });
+        if (!(await store.ensureSite(site, origin))) return json({ error: "site disabled" }, 403);
+        if ((await store.recentAds(ipHash, 60)) >= rate) return json({ error: "rate limited" }, 429, { "Retry-After": "30" });
+        let earnerId: string | null = null;
+        if (typeof b.earner === "string" && TOKEN_RE.test(b.earner)) {
+          const e = await store.findEarner(await tokenHash(b.earner));
+          if (e && e.status === "active") earnerId = e.id;
+        }
+        const adId = typeof b.ad_id === "string" ? b.ad_id.slice(0, 128) : null;
+        const id = await store.insertExternalImpression({ site_key: site, provider: network, tracking: { requestId, adId, clientReported: true }, ip_hash: ipHash, origin, earner_id: earnerId });
+        if (!id) return json({ ok: true, counted: false, duplicate: true });
+        await store.finishImpression(id, site, 200, true);
+        let credited = false;
+        if (earnerId) {
+          const p = await store.program();
+          credited = await store.creditImpression(id, earnerId, p.daily_cap, p.min_gap_seconds);
+        }
+        log(`impression site=${site} provider=${network} client-reported${earnerId ? ` earner credited=${credited}` : ""}`);
         return json({ ok: true, counted: true, credited });
       }
 

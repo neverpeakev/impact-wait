@@ -16,6 +16,15 @@ export type GoodwaitImpact = {
   sponsored_waits: number
 }
 
+// An ad the mod fetched straight from a network that is called from the viewer's
+// own device (Velocity). The mod fires its impression URL and reports the view.
+export type GoodwaitExternal = {
+  network: 'velocity'
+  requestId: string
+  adId: string | null
+  impressionUrl: string
+}
+
 export type GoodwaitCurrent = {
   id: string
   turnId: string
@@ -23,6 +32,7 @@ export type GoodwaitCurrent = {
   impact: GoodwaitImpact
   sandbox: boolean
   impressed: boolean
+  external?: GoodwaitExternal | null
 }
 
 export type GoodwaitLeader = {

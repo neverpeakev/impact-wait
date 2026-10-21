@@ -117,3 +117,9 @@ alter table impact_wait.earners enable row level security;
 alter table impact_wait.program enable row level security;
 alter table impact_wait.settlements enable row level security;
 alter table impact_wait.earner_payouts enable row level security;
+
+-- Follow-up (goodwait_external_impressions): client-reported impressions of ads the viewer's
+-- own device fetched (Velocity). One row per network request id; a repeat report is ignored.
+create unique index if not exists ads_client_reported_request
+  on impact_wait.ads (provider, (tracking->>'requestId'))
+  where (tracking->>'clientReported') = 'true';

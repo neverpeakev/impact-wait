@@ -41,6 +41,12 @@ export function pgStore(dbUrl: string): Store {
       const again = await sql`select * from impact_wait.ads where id = ${id} and created_at > now() - interval '1 day'`;
       return again[0] ? { row: again[0] as unknown as AdRow, first: false } : null;
     },
+    async insertExternalImpression(row) {
+      const rows = await sql`insert into impact_wait.ads (site_key, provider, live, tracking, click_url, ip_hash, origin, earner_id, impression_at)
+        values (${row.site_key}, ${row.provider}, true, ${sql.json(row.tracking as any)}, null, ${row.ip_hash}, ${row.origin || null}, ${row.earner_id}, now())
+        on conflict do nothing returning id`;
+      return rows[0] ? rows[0].id : null;
+    },
     async program() {
       const [r] = await sql`select user_share_pct::float8 as user_share_pct, est_ecpm_usd::float8 as est_ecpm_usd, min_payout_usd::float8 as min_payout_usd,
         daily_cap, min_gap_seconds, max_earners_per_ip_day from impact_wait.program where id = 1`;

@@ -30,6 +30,10 @@ On first run the mod signs this install up as an earner (no account, no email ne
 
 Keep your earner token private: it is your balance. It lives in the plugin store on this machine; reinstalling on a new machine starts a new earner.
 
+## Ad source: Velocity
+
+With **Velocity ad unit ID** set in `/config`, the mod asks Velocity for the ad straight from your machine (the same calls Velocity's browser SDK makes), fires Velocity's impression URL from your machine after the ad has been on screen for a second, then reports the view once to the Goodwait API so it counts and credits. Your earner id goes to Velocity as the publisher user id, so Velocity's own reporting can show revenue per earner. No fill, an error, or no answer within 2.5 seconds falls back to the Goodwait API's ads. With the setting empty (the default), Velocity is off.
+
 ## Install
 
 ```bash
@@ -55,12 +59,13 @@ insert into impact_wait.earnings (network, site_key, earned_usd, paid_waits, cli
 values ('idlen', 'claude-code', 0.63, 30, 1, now(), 'idlen dashboard');
 ```
 - **API endpoint**: leave as is unless you self-host the API.
+- **Velocity ad unit ID** (default empty = off) and **Velocity site URL**: the placement as registered in Velocity.
 
 Commands: `/goodwait` opens the counter pane, `/goodwait off` and `/goodwait on` toggle the line. The `hide` button does the same and remembers your choice across sessions.
 
 ## What leaves your machine
 
-The first 500 characters of your prompt, the site key, a random per-session id and your earner token, sent to the Goodwait API to pick one matching line and credit your view. The API passes the prompt text on to the ad network to match the ad. No files, no tool output, no code beyond what you typed in the prompt. Your PayPal email is stored only for payouts and shown back to you masked.
+With Velocity on, the first 500 characters of your prompt, a random per-session id and your earner id go to Velocity to pick the ad. Otherwise, the first 500 characters of your prompt, the site key, a random per-session id and your earner token, sent to the Goodwait API to pick one matching line and credit your view. The API passes the prompt text on to the ad network to match the ad. No files, no tool output, no code beyond what you typed in the prompt. Your PayPal email is stored only for payouts and shown back to you masked.
 
 ## Development
 
