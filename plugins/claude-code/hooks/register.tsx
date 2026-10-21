@@ -32,7 +32,8 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 // prompt, keystroke in the prompt box or press in the mod's band or pane.
 // Nobody around, nothing rotates: one ad stays up and no new view is counted.
 //
-// Velocity: with an ad unit set (the velocityAdUnit setting), the mod asks
+// Velocity (on by default with Goodwait's own ad unit; clear the velocityAdUnit
+// setting to turn it off): the mod asks
 // Velocity for the ad straight from this machine, so the request comes from the
 // person's own connection, as Velocity's browser SDK does. A view fires
 // Velocity's impression URL from here too, then is reported to the Goodwait API
@@ -64,7 +65,11 @@ const EARN_REF = 'claude-code-mod'
 const VELOCITY_GW = 'https://gw.vlcapi.net'
 const VELOCITY_KEY = 'b9fb08c9ea6c' // Never Peak's Velocity publisher key (a public client id)
 const VELOCITY_TIMEOUT_MS = 2500
-const MOD_VERSION = 'goodwait-claude-code/0.7.0'
+// Goodwait's own native ad unit in Velocity, under the impact-wait.vercel.app site.
+const VELOCITY_DEFAULT_UNIT = 'e7b24fe95681'
+// A failed Velocity init is retried, at most this often.
+const VELOCITY_INIT_RETRY_MS = 60_000
+const MOD_VERSION = 'goodwait-claude-code/0.8.0'
 // The band shows the ad's body line only when there is room for it.
 const WIDE_COLUMNS = 110
 
@@ -94,6 +99,7 @@ let idleTicks = 0
 let turnText = ''
 // Velocity, per session: whether init succeeded, and the ad unit depth it expects.
 let velocityReady: Promise<boolean> | null = null
+let velocityInitFailedAt: number | null = null
 let velocityDepth = 1
 let earnerId = ''
 
@@ -374,7 +380,18 @@ const httpsOnly = (u: unknown): string => (typeof u === 'string' && /^https:\/\/
 // One native ad from Velocity for this prompt, or null (no fill, error, slow).
 async function velocityAd($: EngineInterface, cfg: Config, query: string): Promise<{ ad: GoodwaitAd; external: GoodwaitExternal } | null> {
   if (!cfg.velocityAdUnit) return null
-  if (!velocityReady) velocityReady = velocityInit($, cfg)
+  if (!velocityReady) {
+    // After a failed init, wait a minute before asking Velocity again.
+    if (velocityInitFailedAt !== null && (await $.clock.now()) - velocityInitFailedAt < VELOCITY_INIT_RETRY_MS) return null
+    const attempt = velocityInit($, cfg)
+    velocityReady = attempt
+    attempt.then(async ok => {
+      if (!ok && velocityReady === attempt) {
+        velocityReady = null
+        velocityInitFailedAt = await $.clock.now()
+      }
+    })
+  }
   const ready = await within($, velocityReady, VELOCITY_TIMEOUT_MS)
   if (!ready) return null
   const res = await within(
@@ -574,7 +591,10 @@ export const register: Register = (on, options) => {
       return Math.max(MIN_ROTATE_SECONDS, n)
     })(),
     presenceSeconds: Number.isFinite(Number(options.presenceSeconds)) && Number(options.presenceSeconds) > 0 ? Number(options.presenceSeconds) : 120,
-    velocityAdUnit: /^[A-Za-z0-9_-]{4,64}$/.test(String(options.velocityAdUnit ?? '').trim()) ? String(options.velocityAdUnit).trim() : '',
+    // Unset = Goodwait's own unit; set to empty (or anything that is not an id) = Velocity off.
+    velocityAdUnit: options.velocityAdUnit === undefined || options.velocityAdUnit === null
+      ? VELOCITY_DEFAULT_UNIT
+      : /^[A-Za-z0-9_-]{4,64}$/.test(String(options.velocityAdUnit).trim()) ? String(options.velocityAdUnit).trim() : '',
     velocitySiteUrl: /^https:\/\/[^\s]+$/i.test(String(options.velocitySiteUrl ?? '')) ? String(options.velocitySiteUrl) : 'https://impact-wait.vercel.app',
   }
 
@@ -597,6 +617,7 @@ export const register: Register = (on, options) => {
     earnerToken = ''
     earnerId = ''
     velocityReady = null
+    velocityInitFailedAt = null
     velocityDepth = 1
     $.clock.after(0, () => {
       fire(ensureEarner($, cfg))

@@ -80,7 +80,19 @@ async function startTurn($: Engine, clock: ReturnType<typeof mock.clock>, text =
 }
 const calls = (w: World, url: string) => w.fetched.filter(f => f.url === url || f.url.endsWith(url))
 
-test('off by default: no Velocity calls, the Goodwait API serves', async ($, on) => {
+test('on by default with Goodwait\'s own ad unit', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await startTurn($, clock)
+  const load = JSON.parse(calls(w, `${GW}/v2/load`)[0]!.body ?? '{}')
+  expect(load.adUnitId).toBe('e7b24fe95681')
+  expect(load.metadata.webMetadata.domainName).toBe('impact-wait.vercel.app')
+  expect(calls(w, '/ad').length).toBe(0)
+})
+
+test('an empty ad unit turns Velocity off: no Velocity calls, the Goodwait API serves', { options: { velocityAdUnit: '' } }, async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
   const w = world()
@@ -188,4 +200,26 @@ test('if the impression cannot reach Velocity, no view is claimed', { options: {
   await tick(clock, 1000)
   expect(calls(w, IMP).length).toBe(1)
   expect(calls(w, '/impression/external').length).toBe(0)
+})
+
+test('a failed init is retried after a minute, not every ad and not never', { options: { velocityAdUnit: UNIT } }, async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.init = false
+  bottom(on, w)
+  await startTurn($, clock)
+  expect(calls(w, `${GW}/init`).length).toBe(1)
+  await tick(clock, 1000) // impression of the fallback ad
+  await tick(clock, 15_000) // rotation 1, inside the minute: no new init
+  expect(calls(w, `${GW}/init`).length).toBe(1)
+  expect(calls(w, `${GW}/v2/load`).length).toBe(0)
+
+  w.init = true // Velocity is back
+  for (let i = 0; i < 4; i++) {
+    await tick(clock, 1000)
+    await tick(clock, 15_000)
+  }
+  expect(calls(w, `${GW}/init`).length).toBe(2)
+  expect(calls(w, `${GW}/v2/load`).length).toBeGreaterThan(0)
 })
