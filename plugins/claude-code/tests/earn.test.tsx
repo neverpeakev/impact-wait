@@ -25,6 +25,7 @@ const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false,
 type World = {
   fetched: { url: string; body?: string; auth?: string }[]
   toasts: string[]
+  status: (string | undefined)[]
   signups: number
   creditNext: boolean
   me: Record<string, unknown>
@@ -35,6 +36,7 @@ type World = {
 const world = (): World => ({
   fetched: [],
   toasts: [],
+  status: [],
   signups: 0,
   creditNext: true,
   signupStatus: 201,
@@ -55,7 +57,10 @@ function bottom(on: On, w: World) {
     w.toasts.push(e.text)
     return { value: undefined }
   })
-  on('ui.status', () => ({ value: undefined }))
+  on('ui.status', ($, e) => {
+    w.status.push(e.text)
+    return { value: undefined }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -89,6 +94,11 @@ function bottom(on: On, w: World) {
     if (e.url.includes('/stats')) return res(200, STATS)
     return res(404, {})
   })
+}
+
+async function tick(clock: ReturnType<typeof mock.clock>, ms: number) {
+  await clock.advance(ms)
+  await clock.settle()
 }
 
 async function start($: Engine, clock: ReturnType<typeof mock.clock>) {
@@ -130,6 +140,8 @@ test('ad requests carry the earner token; a credited view refreshes the balance 
   const band = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
   expect(await band.find({ type: 'Text', text: /^You: 1 paid views today · 1 pending · \$0\.00 owed · 50 waits so far/ })).toBeDefined()
   await band.unmount()
+  // The status line shows the earner's own balance, not the site's total.
+  expect(w.status.at(-1)).toBe('1 paid views today · $0.00 owed')
 })
 
 test('with no earner (sign-up refused) the band falls back to the old line and ads carry no token', async ($, on) => {
@@ -145,6 +157,7 @@ test('with no earner (sign-up refused) the band falls back to the old line and a
   expect(JSON.parse(w.fetched.find(f => f.url.endsWith('/ad'))!.body ?? '{}').earner).toBeUndefined()
   const band = await $.ui.mount({ plugin: 'goodwait', surface: 'terminal', ...BAND })
   expect(await band.find({ type: 'Text', text: /lifetime · est\. \$0\.00 this session/ })).toBeDefined()
+  expect(w.status.at(-1)).toMatch(/^50 waits · /) // no earner: the site line
   await band.unmount()
   const r = await $.command.run({ command: 'earn', args: '', ...RUN })
   expect(r.text).toMatch(/not set up/)
@@ -188,4 +201,21 @@ test('the pane leads with your earnings and how payouts work', async ($, on) => 
   expect(await ui.find({ type: 'Text', text: /once you are owed \$10\.00/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /\/earn paypal you@example\.com/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('a subagent turn never takes over the band or the ad request', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await start($, clock)
+  await $.turn.start({ text: 'refactor the payments module', turnId: 'main' })
+  await tick(clock, 0)
+  await $.turn.start({ text: 'Explore the codebase for payment code', turnId: 'sub1', agentId: 'agent-1' })
+  await tick(clock, 0)
+  const ads = w.fetched.filter(f => f.url.endsWith('/ad'))
+  expect(ads.length).toBe(1) // only the person's turn asks for an ad
+  expect(JSON.parse(ads[0]!.body ?? '{}').query).toBe('refactor the payments module')
+  await tick(clock, 1000) // the impression still counts for the main turn
+  expect(w.fetched.some(f => f.url.endsWith('/event'))).toBe(true)
 })

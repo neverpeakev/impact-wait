@@ -157,6 +157,13 @@ async function paintStatus($: EngineInterface, cfg: Config) {
     $.ui.status(undefined)
     return
   }
+  // An earner sees their own balance, never the site's total.
+  const me = await read($, earner)
+  if (me) {
+    const est = me.est_pending_usd !== null && me.est_pending_usd > 0 ? ` · est. ${money(me.est_pending_usd)} pending` : ''
+    $.ui.status(`${num(me.credited_today)} paid views today · ${money(me.owed_usd)} owed${est}`)
+    return
+  }
   const st = await read($, stats)
   if (!st) {
     $.ui.status('counting waits')
@@ -218,6 +225,7 @@ async function fetchEarner($: EngineInterface, cfg: Config): Promise<GoodwaitEar
   if (!j || typeof j.earner_id !== 'string' || !j.program) return null
   const full: GoodwaitEarner = { ...j, fetchedAt: await $.clock.now() }
   await update($, earner, () => full)
+  await paintStatus($, cfg)
   return full
 }
 
@@ -426,6 +434,8 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', ($, e, next) => {
+    // A subagent's turn runs inside the person's; it must not take over the band.
+    if (e.agentId) return next(e)
     activeTurn = e.turnId
     clearTimer?.cancel()
     clearTimer = null
