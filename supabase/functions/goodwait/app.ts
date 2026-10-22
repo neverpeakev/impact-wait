@@ -116,6 +116,16 @@ function bearer(req: Request): string {
   return m && TOKEN_RE.test(m[1]) ? m[1] : "";
 }
 const money4 = (n: number) => Math.round(n * 10000) / 10000;
+// The caller's real address. Cloudflare (in front of Supabase) sets cf-connecting-ip and overwrites any
+// value a client sends; x-forwarded-for keeps whatever the client wrote first, so it is only a fallback.
+// Every per-network guard (sign-up caps, referral same-network check, rate limits) depends on this.
+export function clientIp(req: Request): string {
+  const cf = (req.headers.get("cf-connecting-ip") || "").trim();
+  if (cf) return cf;
+  const real = (req.headers.get("x-real-ip") || "").trim();
+  if (real) return real;
+  return (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+}
 
 export function impactSummary(impact: Impact, totalWaits: number) {
   const units = impact.usd_per_unit && impact.usd_per_unit > 0 ? Math.floor(Number(impact.donated_usd) / Number(impact.usd_per_unit)) : null;
@@ -138,7 +148,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
     const route = url.pathname.replace(/^.*\/goodwait/, "") || "/";
-    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const ip = clientIp(req);
     const ipHash = await sha(`${ip}|${new Date().toISOString().slice(0, 10)}|${salt}`);
     const origin = (req.headers.get("origin") || req.headers.get("referer") || "").slice(0, 200);
     try {

@@ -1,6 +1,6 @@
 // One balance, three exits: settlement credits, referral cut, donate, ledger, draw entries.
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { createApp } from "../supabase/functions/goodwait/app.ts";
+import { clientIp, createApp } from "../supabase/functions/goodwait/app.ts";
 import { memStore } from "./memstore.ts";
 
 const BASE = "https://x.supabase.co/functions/v1/goodwait";
@@ -166,4 +166,23 @@ Deno.test("a draw that isn't open (draft) is invisible", async () => {
   const a = await t.signup("1.1.1.1");
   t.store.draws.push({ id: "d2", name: "Launch draw", prize_usd: 1000, status: "draft", opens_at: new Date(Date.now() - 3600e3), closes_at: new Date(Date.now() + 86400e3), rules_url: null });
   assertEquals((await t.me(a.token)).draw, null);
+});
+
+Deno.test("a forged x-forwarded-for can't make a same-network sign-up count as a referral", async () => {
+  const store = memStore({}, { min_gap_seconds: 0 });
+  const app = createApp({ store, keys: {}, baseUrl: BASE, salt: "t" });
+  const signup = async (cf: string, xff: string, invite?: string) => (await app(new Request(BASE + "/earner", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": cf, "x-forwarded-for": xff }, body: JSON.stringify(invite ? { invite } : {}) }))).json();
+  const a = await signup("7.7.7.7", "7.7.7.7");
+  const forged = await signup("7.7.7.7", "203.0.113.7", a.referral_code);
+  assertEquals(forged.referred, false);
+  const real = await signup("8.8.8.8", "8.8.8.8", a.referral_code);
+  assertEquals(real.referred, true);
+});
+
+Deno.test("clientIp: Cloudflare header first, then x-real-ip, then the first x-forwarded-for entry", () => {
+  const r = (h: Record<string, string>) => clientIp(new Request(BASE, { headers: h }));
+  assertEquals(r({ "cf-connecting-ip": "1.1.1.1", "x-real-ip": "2.2.2.2", "x-forwarded-for": "3.3.3.3" }), "1.1.1.1");
+  assertEquals(r({ "x-real-ip": "2.2.2.2", "x-forwarded-for": "3.3.3.3" }), "2.2.2.2");
+  assertEquals(r({ "x-forwarded-for": "3.3.3.3, 4.4.4.4" }), "3.3.3.3");
+  assertEquals(r({}), "unknown");
 });

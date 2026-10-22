@@ -114,3 +114,10 @@ Deno.test("cleanUtm drops non-strings and caps length", () => {
   assertEquals(cleanUtm({ utm_source: "x".repeat(500), utm_medium: 5, gclid: " g " }), { utm_source: "x".repeat(200), gclid: "g" });
   assertEquals(cleanUtm(null), {});
 });
+
+Deno.test("a forged x-forwarded-for can't dodge the sign-up limit: Cloudflare's address wins", async () => {
+  const t = mk();
+  const req = (i: number) => new Request(URL_, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, "cf-connecting-ip": "5.5.5.5", "x-forwarded-for": `10.0.0.${i}` }, body: JSON.stringify({ kind: "signup", variant: "cash", session: SESSION, email: `p${i}@x.com` }) });
+  for (let i = 0; i < 5; i++) assertEquals((await t.h(req(i))).status, 200);
+  assertEquals((await t.h(req(99))).status, 429);
+});

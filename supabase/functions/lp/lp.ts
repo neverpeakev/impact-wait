@@ -60,7 +60,8 @@ export function createLp(opts: { store: LpStore; origins: (string | RegExp)[]; s
       // Honeypot: a bot filled the hidden field. Say yes, keep nothing.
       if (typeof b.hp === "string" && b.hp.length > 0) return json({ ok: true });
 
-      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+      // Real client address: Cloudflare overwrites cf-connecting-ip; x-forwarded-for is client-writable.
+      const ip = (req.headers.get("cf-connecting-ip") || "").trim() || (req.headers.get("x-real-ip") || "").trim() || (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
       const ipHash = await sha(`${ip}|${new Date().toISOString().slice(0, 10)}|${salt}`);
       if ((await store.recentEvents(ipHash, 60)) >= 30) return json({ error: "slow down" }, 429);
       const utm = cleanUtm(b.utm);
