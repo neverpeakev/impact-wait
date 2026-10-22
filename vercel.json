@@ -47,16 +47,17 @@
       ]
     }
   ],
-  "rewrites": [
+  "redirects": [
     {
       "source": "/",
       "has": [
         {
           "type": "host",
-          "value": "www.vibedough.com"
+          "value": "(www\\.)?vibedough\\.com"
         }
       ],
-      "destination": "/try/cash"
+      "destination": "/try/cash",
+      "permanent": false
     }
   ]
 }
