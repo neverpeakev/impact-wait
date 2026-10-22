@@ -46,5 +46,17 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.vibedough.com"
+        }
+      ],
+      "destination": "/try/cash"
+    }
   ]
 }
