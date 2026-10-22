@@ -5,9 +5,9 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 
 // Goodwait for Claude Code.
 // While a turn runs, one labeled sponsored line sits above the prompt. It
-// disappears a few seconds after the reply lands. Half of the net ad revenue
-// goes to Khan Academy; every counted wait adds to the public counter at
-// https://goodwait.vercel.app.
+// disappears a few seconds after the reply lands. Half of the ad revenue from
+// your counted views is yours (cash, donate, or draw entries); every counted
+// wait adds to the public counter at https://impact-wait.vercel.app.
 //
 // Beyond the line: the status line carries the counter and estimated
 // earnings, /goodwait opens a pane with earnings and the leaderboard, pressing
@@ -48,7 +48,7 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 // nothing.
 
 const DEFAULT_ENDPOINT = 'https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait'
-const HOME = 'https://goodwait.vercel.app'
+const HOME = 'https://impact-wait.vercel.app'
 const SITE_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
 const QUERY_CHARS = 500
 // Your share per 1,000 paid views, for estimates only: half of Velocity's early publisher rate

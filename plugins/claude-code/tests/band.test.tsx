@@ -332,7 +332,7 @@ test('/goodwait opens the pane, which shows totals, the leaderboard and this ses
     await ui.press({ key: 'toggle' })
     expect(s.status.at(-1)).toMatch(/^1,234 waits/)
     await ui.press({ key: 'site' })
-    expect(s.runs.at(-1)).toEqual(['open', 'https://goodwait.vercel.app/?ref=claude-code'])
+    expect(s.runs.at(-1)).toEqual(['open', 'https://impact-wait.vercel.app/?ref=claude-code'])
     await ui.unmount()
   }
 })
