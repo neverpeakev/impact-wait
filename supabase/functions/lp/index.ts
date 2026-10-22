@@ -35,8 +35,8 @@ const store: LpStore = {
 const origins: (string | RegExp)[] = [
   "https://impact-wait.vercel.app",
   /^https:\/\/impact-wait-[a-z0-9-]+\.vercel\.app$/,
-  "https://knippel.ai", "https://www.knippel.ai",
-  "https://idlepay.ai", "https://www.idlepay.ai",
+  // Only domains we own: an origin someone else can register could post signups here.
+  "https://vibedough.com", "https://www.vibedough.com",
 ];
 
 Deno.serve(createLp({ store, origins, salt: Deno.env.get("GOODWAIT_SALT") || "lp-default-salt", log: (m) => console.log(m) }));

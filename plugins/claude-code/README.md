@@ -1,4 +1,4 @@
-# Knippel for Claude Code
+# Vibedough for Claude Code
 
 Get paid while Claude Code thinks.
 
@@ -6,13 +6,13 @@ While your agent works, this mod shows one labeled sponsored line above the prom
 
 The full source is here so you can check exactly what it does. It never reads your files, your code or anything the agent writes.
 
-> Knippel is the working name. Inside Claude Code the mod still calls itself Goodwait (`/goodwait`, the pane title) until the rename ships.
+> Inside Claude Code the mod still calls itself Goodwait (`/goodwait`, the pane title) until the rename ships.
 
 ## Install
 
 ```bash
-git clone https://github.com/neverpeakev/knippel-claude-code
-claude --plugin-dir ./knippel-claude-code
+git clone https://github.com/neverpeakev/vibedough-claude-code
+claude --plugin-dir ./vibedough-claude-code
 ```
 
 To load it in every session, add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`.
@@ -51,7 +51,7 @@ The mod makes these requests and no others.
 - A random per-session id, your earner id, the ad unit and your timezone.
 - The ad's impression URL, after the ad has been on screen for a second.
 
-**To the Knippel API** (`mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait`):
+**To the Vibedough API** (`mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait`):
 - `/earner`: a one-time sign-up, plus the invite code if you set one.
 - `/ad`: used only when Velocity has no ad. It sends the first 500 characters of your prompt, the site key, the session id and your earner token.
 - `/event`, `/impression/external`: that a view happened, so it counts and is credited.
@@ -71,7 +71,7 @@ In `/config` under **goodwait**:
 | Invite code | empty | A friend's code, used once at sign-up |
 | Rotate every (seconds) | 15 | 0 turns rotation off; never below 15 |
 | Presence window (seconds) | 120 | How long after your last activity ads keep rotating |
-| Velocity ad unit ID | Knippel's unit | Clear it to use only the Knippel API's ads |
+| Velocity ad unit ID | Vibedough's unit | Clear it to use only the Vibedough API's ads |
 | Site key | `claude-code` | `sandbox` shows a test ad and counts nothing |
 
 Turn the line off any time with `/goodwait off`, or press `h` on the band. `/goodwait on` brings it back.

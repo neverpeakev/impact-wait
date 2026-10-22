@@ -27,7 +27,7 @@ function stub(fill: { idlen?: boolean; admesh?: boolean; agentads?: boolean; idl
   return { f, calls };
 }
 
-function mk(fill: Parameters<typeof stub>[0], keys = { idlen: "idl_pk_x", admesh: "sk_x", agentads: "pub_x" }, extra: Record<string, unknown> = {}) {
+function mk(fill: Parameters<typeof stub>[0], keys: Partial<Record<"idlen" | "admesh" | "agentads", string>> = { idlen: "idl_pk_x", admesh: "sk_x", agentads: "pub_x" }, extra: Record<string, unknown> = {}) {
   const store = memStore();
   const s = stub(fill);
   const app = createApp({ store, keys, baseUrl: BASE, salt: "t", fetch: s.f, ...extra });
