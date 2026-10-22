@@ -67,17 +67,31 @@ button.save{font:600 15px/1 "Public Sans",sans-serif;padding:10px 16px;border-ra
 .term{background:var(--term);color:var(--term-text);border-radius:14px;font:400 14.5px/1.65 "JetBrains Mono",ui-monospace,monospace;box-shadow:0 30px 60px -28px rgba(14,23,48,.55);overflow:hidden}
 .term .bar{display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--term-line);color:var(--term-dim);font-size:12.5px}
 .term .body{padding:18px 18px 20px;min-height:270px}
-.term .p{color:#fff}
-.term .p b{color:#9DB4FF;font-weight:600}
-.term .think{color:#F0C46B;margin-top:14px}
-.term .dim{color:var(--term-dim)}
-.band{margin-top:14px;border:1px solid var(--term-line);border-radius:8px;padding:10px 12px}
-.band .ad{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;transition:opacity .35s}
-.band .tag{font-size:11.5px;color:var(--term-dim);border:1px solid var(--term-line);border-radius:4px;padding:0 6px}
+.term .ctx{color:#8C97B2}
+.term .p{color:#B4BDD3}
+.term .p b{color:#6B7899;font-weight:600}
+.term .think{color:#8C97B2;margin-top:14px}
+.term .spin{color:#D97757}
+.term .dim{color:#6B7899}
+/* Two things the visitor should see, each with its own color: the ad (blue) and the money (green). */
+.band{margin-top:16px;display:grid;gap:8px}
+.band .ad,.band .earn{border-radius:8px;padding:10px 12px;border-left:3px solid}
+.band .ad{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;background:rgba(110,139,255,.10);border-color:#6E8BFF;transition:opacity .35s}
+.band .tag{font:600 11px/1.6 "Public Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#0E1730;background:#8EA6FF;border-radius:4px;padding:1px 7px}
 .band .brand{color:#fff;font-weight:600}
-.band .cta{color:#9DB4FF;margin-left:auto}
-.band .meter{margin-top:8px;color:var(--brass);font-weight:600;font-size:13.5px}
-.caption{font-size:13px;color:var(--ink-soft);margin:10px 4px 0}
+.band .line{color:#C5CCE0}
+.band .cta{color:#A9BCFF;margin-left:auto}
+.band .earn{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;background:rgba(61,220,151,.10);border-color:#3DDC97}
+.band .earn .lab{color:#9BE7C4}
+.band .earn .val{color:#3DDC97;font-weight:700;font-size:1.25em;transition:transform .3s}
+.band .earn .val.bump{transform:scale(1.12)}
+.band .earn .esub{color:#7F8BAA}
+.band .earn .esub::before{content:"· ";color:#56628A}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:14px 4px 0;padding:0;list-style:none;font-size:14px;color:var(--ink)}
+.legend li{display:flex;align-items:center;gap:8px}
+.legend i{width:12px;height:12px;border-radius:3px;flex:none}
+.legend .k-ad{background:#6E8BFF}.legend .k-earn{background:#1F9E68}
+.caption{font-size:13px;color:var(--ink-soft);margin:6px 4px 0}
 
 section{padding:72px 0;border-top:1px solid #D5DDEA}
 h2{font:400 clamp(30px,3.6vw,40px)/1.15 "Young Serif",Georgia,serif;margin:0 0 32px;max-width:22ch}
@@ -123,7 +137,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   .band .cta{margin-left:0}
   .top-cta{display:none}
 }
-@media (prefers-reduced-motion:reduce){ .band .ad{transition:none} }
+@media (prefers-reduced-motion:reduce){ .band .ad,.band .earn .val{transition:none} }
 </style>
 </head>
 <body data-variant="prize">
@@ -154,16 +168,19 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
         <div class="term" role="img" aria-label="Claude Code thinking, with one sponsored line and your entries underneath">
           <div class="bar"><span>~/payments</span><span>claude</span></div>
           <div class="body" aria-hidden="true">
-            <div class="p"><b>&gt;</b> refactor the payments module to use the new ledger API</div>
-            <div class="think"><span class="spin">✻</span> Thinking… <span class="dim">(<span class="secs">47</span>s · ↓ <span class="tok">2.1</span>k tokens)</span></div>
-            <div class="dim" style="margin-top:6px">  ⎿ Reading src/payments/ledger.ts</div>
+            <div class="ctx">
+              <div class="p"><b>&gt;</b> refactor the payments module to use the new ledger API</div>
+              <div class="think"><span class="spin">✻</span> Thinking… <span class="dim">(<span class="secs">47</span>s · ↓ <span class="tok">2.1</span>k tokens)</span></div>
+              <div class="dim" style="margin-top:6px">  ⎿ Reading src/payments/ledger.ts</div>
+            </div>
             <div class="band">
-              <div class="ad"><span class="tag">Sponsored</span><span class="brand">Lumen DB</span><span class="line">Postgres that sleeps when you do.</span><span class="cta">Try it</span></div>
-              <div class="meter">vibedough  17 draw entries  ·  $1,000 launch draw</div>
+              <div class="ad"><span class="tag">Sponsored</span><span class="brand">Lumen DB</span><span class="line">Postgres that sleeps when you do.</span><span class="cta">Try it →</span></div>
+              <div class="earn"><span class="lab">Your draw entries</span><span class="val">17</span><span class="esub">$1,000 launch draw</span></div>
             </div>
           </div>
         </div>
-        <p class="caption">What it looks like. Advertisers and numbers here are examples.</p>
+        <ul class="legend"><li><i class="k-ad"></i>One labeled ad while Claude works</li><li><i class="k-earn"></i>Your draw entries, live in your status line</li></ul>
+        <p class="caption">Advertisers and numbers here are examples.</p>
       </div>
     </div>
 
@@ -233,7 +250,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/lp";
   const VARIANT = "prize";
   const ADS = [["Lumen DB","Postgres that sleeps when you do.","Try it"],["Shipyard","A preview deploy for every branch.","Start free"],["Tracewell","Find the slow query before your users do.","See demo"],["Inkpad","Docs your whole team actually updates.","Try it"]];
-  const METERS = ["vibedough  17 draw entries  ·  $1,000 launch draw","vibedough  18 draw entries  ·  $1,000 launch draw","vibedough  19 draw entries  ·  $1,000 launch draw","vibedough  20 draw entries  ·  $1,000 launch draw","vibedough  21 draw entries  ·  $1,000 launch draw"];
+  const METERS = [["Your draw entries","17","$1,000 launch draw"],["Your draw entries","18","$1,000 launch draw"],["Your draw entries","19","$1,000 launch draw"],["Your draw entries","20","$1,000 launch draw"],["Your draw entries","21","$1,000 launch draw"]];
   const AUTH = "https://mvnfgrydpdwaatkcsrdd.supabase.co/auth/v1", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12bmZncnlkcGR3YWF0a2NzcmRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4NTIyMzUsImV4cCI6MjA3MjQyODIzNX0.vPKEZnj8ACjfXpO7ueUvcKT1wBO0-JM-UwcOEvmqXRk";
   const ACCOUNTS = false || new URLSearchParams(location.search).get("acct") === "1";
 
@@ -255,7 +272,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!still) {
     const spin = document.querySelector(".spin"), secs = document.querySelector(".secs"), tok = document.querySelector(".tok");
-    const ad = document.querySelector(".band .ad"), meter = document.querySelector(".band .meter");
+    const ad = document.querySelector(".band .ad"), val = document.querySelector(".band .earn .val"), esub = document.querySelector(".band .earn .esub");
     const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0;
     setInterval(() => { spin.textContent = frames[f = (f + 1) % frames.length]; }, 160);
     setInterval(() => { secs.textContent = ++s; t += 0.07; tok.textContent = t.toFixed(1); }, 1000);
@@ -264,8 +281,10 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       ad.style.opacity = 0;
       setTimeout(() => {
         const [b, l, c] = ADS[i];
-        ad.querySelector(".brand").textContent = b; ad.querySelector(".line").textContent = l; ad.querySelector(".cta").textContent = c;
-        meter.textContent = METERS[Math.min(i + 1, METERS.length - 1)] ;
+        ad.querySelector(".brand").textContent = b; ad.querySelector(".line").textContent = l; ad.querySelector(".cta").textContent = c + " →";
+        const m = METERS[Math.min(i + 1, METERS.length - 1)];
+        if (val.textContent !== m[1]) { val.textContent = m[1]; val.classList.add("bump"); setTimeout(() => val.classList.remove("bump"), 300); }
+        esub.textContent = m[2];
         ad.style.opacity = 1;
       }, 350);
     }, 4000);
