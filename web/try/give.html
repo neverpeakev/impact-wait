@@ -175,7 +175,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
             </div>
             <div class="band">
               <div class="ad"><span class="tag">Sponsored</span><span class="brand">Lumen DB</span><span class="line">Postgres that sleeps when you do.</span><span class="cta">Try it →</span></div>
-              <div class="earn"><span class="lab">Raised for your cause</span><span class="val">$0.04</span><span class="esub">17 views today</span></div>
+              <div class="earn"><span class="lab">Raised for your cause</span><span class="val">$40.12</span><span class="esub">16,715 views so far</span></div>
             </div>
           </div>
         </div>
@@ -250,7 +250,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/lp";
   const VARIANT = "give";
   const ADS = [["Lumen DB","Postgres that sleeps when you do.","Try it"],["Shipyard","A preview deploy for every branch.","Start free"],["Tracewell","Find the slow query before your users do.","See demo"],["Inkpad","Docs your whole team actually updates.","Try it"]];
-  const METERS = [["Raised for your cause","$0.04","17 views today"],["Raised for your cause","$0.04","18 views today"],["Raised for your cause","$0.05","19 views today"],["Raised for your cause","$0.05","20 views today"],["Raised for your cause","$0.05","21 views today"]];
+  const METERS = [["Raised for your cause","$40.12","16,715 views so far"],["Raised for your cause","$40.12","16,716 views so far"],["Raised for your cause","$40.12","16,717 views so far"],["Raised for your cause","$40.12","16,718 views so far"],["Raised for your cause","$40.13","16,719 views so far"]];
   const AUTH = "https://mvnfgrydpdwaatkcsrdd.supabase.co/auth/v1", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12bmZncnlkcGR3YWF0a2NzcmRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4NTIyMzUsImV4cCI6MjA3MjQyODIzNX0.vPKEZnj8ACjfXpO7ueUvcKT1wBO0-JM-UwcOEvmqXRk";
   const ACCOUNTS = false || new URLSearchParams(location.search).get("acct") === "1";
 
@@ -273,7 +273,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   if (!still) {
     const spin = document.querySelector(".spin"), secs = document.querySelector(".secs"), tok = document.querySelector(".tok");
     const ad = document.querySelector(".band .ad"), val = document.querySelector(".band .earn .val"), esub = document.querySelector(".band .earn .esub");
-    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0;
+    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0, j = 0;
     setInterval(() => { spin.textContent = frames[f = (f + 1) % frames.length]; }, 160);
     setInterval(() => { secs.textContent = ++s; t += 0.07; tok.textContent = t.toFixed(1); }, 1000);
     setInterval(() => {
@@ -282,7 +282,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       setTimeout(() => {
         const [b, l, c] = ADS[i];
         ad.querySelector(".brand").textContent = b; ad.querySelector(".line").textContent = l; ad.querySelector(".cta").textContent = c + " →";
-        const m = METERS[Math.min(i + 1, METERS.length - 1)];
+        // Only ever counts up, then holds on the last value.
+        const m = METERS[j = Math.min(j + 1, METERS.length - 1)];
         if (val.textContent !== m[1]) { val.textContent = m[1]; val.classList.add("bump"); setTimeout(() => val.classList.remove("bump"), 300); }
         esub.textContent = m[2];
         ad.style.opacity = 1;

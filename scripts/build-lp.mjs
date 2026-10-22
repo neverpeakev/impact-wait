@@ -20,7 +20,9 @@ const VARIANTS = {
     h1: "Get paid while Claude Code thinks.",
     sub: `${BRAND} adds one quiet sponsored line under the spinner while your agent works. You keep half the ad revenue, paid out to PayPal.`,
     micro: "Free. Launching first in Claude Code.",
-    meter: (n) => ["You've earned", `$${(n * 0.0024).toFixed(2)}`, `${n} paid views today`],
+    // Lifetime total, not "today": $40.13 at ~$2.40 per 1,000 paid views is ~16.7k views (~84 days at the 200/day cap).
+    counts: [16715, 16716, 16717, 16718, 16719],
+    meter: (n) => ["You've earned", `$${(n * 0.0024).toFixed(2)}`, `${n.toLocaleString("en-US")} paid views so far`],
     legend: "Your earnings, live in your status line",
     step3: ["Get paid", "Your balance sits in the status line. Cash out to PayPal once you reach $10."],
     offerHead: "Half of the ad revenue is yours.",
@@ -56,7 +58,8 @@ const VARIANTS = {
     h1: "Every time Claude Code thinks, a good cause gets paid.",
     sub: `${BRAND} adds one quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.`,
     micro: "Free. Launching first in Claude Code.",
-    meter: (n) => ["Raised for your cause", `$${(n * 0.0024).toFixed(2)}`, `${n} views today`],
+    counts: [16715, 16716, 16717, 16718, 16719],
+    meter: (n) => ["Raised for your cause", `$${(n * 0.0024).toFixed(2)}`, `${n.toLocaleString("en-US")} views so far`],
     legend: "What you've raised, live in your status line",
     step3: ["Give", "Half of what your waits earn goes to the cause you pick. Your running total sits in the status line."],
     offerHead: "Half of the ad revenue goes to good.",
@@ -79,7 +82,7 @@ const ADS = [
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function page(key, v) {
-  const meters = [3, 4, 5, 6, 7].map((n) => v.meter(n + 14));
+  const meters = (v.counts || [17, 18, 19, 20, 21]).map((n) => v.meter(n));
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -339,7 +342,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   if (!still) {
     const spin = document.querySelector(".spin"), secs = document.querySelector(".secs"), tok = document.querySelector(".tok");
     const ad = document.querySelector(".band .ad"), val = document.querySelector(".band .earn .val"), esub = document.querySelector(".band .earn .esub");
-    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0;
+    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0, j = 0;
     setInterval(() => { spin.textContent = frames[f = (f + 1) % frames.length]; }, 160);
     setInterval(() => { secs.textContent = ++s; t += 0.07; tok.textContent = t.toFixed(1); }, 1000);
     setInterval(() => {
@@ -348,7 +351,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       setTimeout(() => {
         const [b, l, c] = ADS[i];
         ad.querySelector(".brand").textContent = b; ad.querySelector(".line").textContent = l; ad.querySelector(".cta").textContent = c + " →";
-        const m = METERS[Math.min(i + 1, METERS.length - 1)];
+        // Only ever counts up, then holds on the last value.
+        const m = METERS[j = Math.min(j + 1, METERS.length - 1)];
         if (val.textContent !== m[1]) { val.textContent = m[1]; val.classList.add("bump"); setTimeout(() => val.classList.remove("bump"), 300); }
         esub.textContent = m[2];
         ad.style.opacity = 1;

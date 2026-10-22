@@ -273,7 +273,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   if (!still) {
     const spin = document.querySelector(".spin"), secs = document.querySelector(".secs"), tok = document.querySelector(".tok");
     const ad = document.querySelector(".band .ad"), val = document.querySelector(".band .earn .val"), esub = document.querySelector(".band .earn .esub");
-    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0;
+    const frames = ["✻","✽","✶","✳","✢","·"]; let f = 0, s = 47, t = 2.1, i = 0, j = 0;
     setInterval(() => { spin.textContent = frames[f = (f + 1) % frames.length]; }, 160);
     setInterval(() => { secs.textContent = ++s; t += 0.07; tok.textContent = t.toFixed(1); }, 1000);
     setInterval(() => {
@@ -282,7 +282,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       setTimeout(() => {
         const [b, l, c] = ADS[i];
         ad.querySelector(".brand").textContent = b; ad.querySelector(".line").textContent = l; ad.querySelector(".cta").textContent = c + " →";
-        const m = METERS[Math.min(i + 1, METERS.length - 1)];
+        // Only ever counts up, then holds on the last value.
+        const m = METERS[j = Math.min(j + 1, METERS.length - 1)];
         if (val.textContent !== m[1]) { val.textContent = m[1]; val.classList.add("bump"); setTimeout(() => val.classList.remove("bump"), 300); }
         esub.textContent = m[2];
         ad.style.opacity = 1;
