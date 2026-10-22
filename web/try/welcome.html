@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Knippel - account confirmed</title>
+<title>Vibedough - account confirmed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
@@ -35,7 +35,7 @@ a{color:var(--cobalt);font-weight:600}
     m.innerHTML = "<h1>That link didn't work.</h1><p></p><p>Links expire after a while and work once. Sign up again from the page you came from and we'll send a fresh one.</p>";
     m.querySelector("p").textContent = err.replace(/\+/g, " ") + ".";
   } else if (h.get("access_token") || h.get("type") === "signup") {
-    m.innerHTML = "<h1>You're in.</h1><p>Your Knippel account is confirmed. We'll email you the one-line install for Claude Code as soon as it opens.</p>";
+    m.innerHTML = "<h1>You're in.</h1><p>Your Vibedough account is confirmed. We'll email you the one-line install for Claude Code as soon as it opens.</p>";
   } else {
     m.innerHTML = "<h1>Nothing to confirm here.</h1><p>Open the link from the email we sent you to confirm your account.</p>";
   }

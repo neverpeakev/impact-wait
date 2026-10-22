@@ -3,7 +3,7 @@
 // measures the offer and nothing else. Run: node scripts/build-lp.mjs
 import { mkdirSync, writeFileSync } from "node:fs";
 
-const BRAND = "Knippel";
+const BRAND = "Vibedough";
 const ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/lp";
 const AUTH = "https://mvnfgrydpdwaatkcsrdd.supabase.co/auth/v1";
 // Public anon key (ships in every Supabase site's JS; RLS is what protects data).
@@ -18,9 +18,9 @@ const VARIANTS = {
     title: `${BRAND} - get paid while Claude Code thinks`,
     desc: "One quiet sponsored line under the spinner while your agent works. You keep half the ad revenue, paid to PayPal.",
     h1: "Get paid while Claude Code thinks.",
-    sub: "Knippel adds one quiet sponsored line under the spinner while your agent works. You keep half the ad revenue, paid out to PayPal.",
+    sub: `${BRAND} adds one quiet sponsored line under the spinner while your agent works. You keep half the ad revenue, paid out to PayPal.`,
     micro: "Free. Launching first in Claude Code.",
-    meter: (n) => `knippel  $${(n * 0.0024).toFixed(2)} owed  ·  ${n} paid views today`,
+    meter: (n) => `${BRAND.toLowerCase()}  $${(n * 0.0024).toFixed(2)} owed  ·  ${n} paid views today`,
     step3: ["Get paid", "Your balance sits in the status line. Cash out to PayPal once you reach $10."],
     offerHead: "Half of the ad revenue is yours.",
     offer: [
@@ -32,29 +32,29 @@ const VARIANTS = {
   },
   prize: {
     file: "win",
-    title: `${BRAND} - win prizes while Claude Code thinks`,
-    desc: "One quiet sponsored line under the spinner while your agent works. Every paid view enters you in a weekly prize draw.",
+    title: `${BRAND} - win $1,000 while Claude Code thinks`,
+    desc: "One quiet sponsored line under the spinner while your agent works. Every paid view is a free entry in our $1,000 launch draw.",
     h1: "Every time Claude Code thinks, you're entered to win.",
-    sub: "Knippel adds one quiet sponsored line under the spinner while your agent works. Every paid view is an entry in a weekly prize draw that the ads pay for.",
+    sub: `${BRAND} adds one quiet sponsored line under the spinner while your agent works. Every paid view is a free entry in our $1,000 launch draw.`,
     micro: "Free to join. No purchase necessary.",
-    meter: (n) => `knippel  ${n} entries this week  ·  draw on Sunday`,
-    step3: ["Win", "Every paid view is one entry. One winner a week takes the pool."],
-    offerHead: "One draw a week. Every view is a ticket.",
+    meter: (n) => `${BRAND.toLowerCase()}  ${n} draw entries  ·  $1,000 launch draw`,
+    step3: ["Win", "Every paid view is one entry. One winner takes $1,000."],
+    offerHead: "One $1,000 draw. Every view is an entry.",
     offer: [
-      ["The pool is the users' half", "Half of each week's ad revenue goes into the pot. The more people waiting on their agents, the bigger it gets."],
+      ["We put up the prize", "The $1,000 comes from us, not from you. Entering never costs you anything."],
       ["Entries you earn by working", "You don't buy anything or click anything. Your agent thinks, an ad shows, you get an entry."],
-      ["Fair by design", "Views count once, while you're at the keyboard, with a daily cap. Official rules are published before the first draw."],
+      ["Fair by design", "Views count once, while you're at the keyboard, with a daily cap. There's a free way to enter without the app, and official rules go up before the draw opens."],
     ],
-    faqMoney: ["How big are the prizes?", "The pool is the users' half of that week's ad revenue, so it grows with the community. We'll show the running pool size every week. No purchase necessary to enter or win."],
+    faqMoney: ["What's the prize?", "One winner gets $1,000. Entries come from paid views, plus a free way to enter that doesn't need the app. Official rules, dates and eligibility are published before the draw opens. No purchase necessary to enter or win."],
   },
   give: {
     file: "give",
     title: `${BRAND} - fund good causes while Claude Code thinks`,
     desc: "One quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.",
     h1: "Every time Claude Code thinks, a good cause gets paid.",
-    sub: "Knippel adds one quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.",
+    sub: `${BRAND} adds one quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.`,
     micro: "Free. Launching first in Claude Code.",
-    meter: (n) => `knippel  $${(n * 0.0024).toFixed(2)} raised for your cause  ·  ${n} views today`,
+    meter: (n) => `${BRAND.toLowerCase()}  $${(n * 0.0024).toFixed(2)} raised for your cause  ·  ${n} views today`,
     step3: ["Give", "Half of what your waits earn goes to the cause you pick. Your running total sits in the status line."],
     offerHead: "Half of the ad revenue goes to good.",
     offer: [
@@ -286,7 +286,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   </main>
 
   <footer>
-    <p class="def">knippel (Yiddish): the stash of cash your bubbe kept knotted in a handkerchief.</p>
+    <p class="def">vibedough (n.): the money you make while your agent does the work.</p>
     <p>A Never Peak project. We'll only email you about ${BRAND}.</p>
   </footer>
 </div>
@@ -382,7 +382,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
         const r = await fetch(AUTH + "/signup?redirect_to=" + encodeURIComponent(location.origin + "/try/welcome"), {
           method: "POST",
           headers: { "content-type": "application/json", apikey: ANON, authorization: "Bearer " + ANON },
-          body: JSON.stringify({ email, password: pw.value, data: { product: "knippel", variant: VARIANT, utm } }),
+          body: JSON.stringify({ email, password: pw.value, data: { product: ${JSON.stringify(BRAND.toLowerCase())}, variant: VARIANT, utm } }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -546,7 +546,7 @@ li{margin:6px 0}
     <li>Half of that goes to the people whose views earned it. Referral cuts come out of our half, never theirs.</li>
     <li>Cash goes to PayPal once someone has $10, after a 30-day hold on their first cash-out.</li>
     <li>Donations go out monthly, and are marked paid here once sent.</li>
-    <li>The Claude Code mod is <a href="https://github.com/neverpeakev/knippel-claude-code">open source</a>, so you can check exactly what it sends.</li>
+    <li>The Claude Code mod is <a href="https://github.com/neverpeakev/vibedough-claude-code">open source</a>, so you can check exactly what it sends.</li>
   </ul>
 </main>
 <script>
