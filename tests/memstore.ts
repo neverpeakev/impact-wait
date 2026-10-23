@@ -1,22 +1,28 @@
 import type { AdRow, Impact, Program, Store } from "../supabase/functions/goodwait/app.ts";
 
-export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial<Program> = {}): Store & { ads: Map<string, AdRow & { ip_hash: string }>; totals: Map<string, any>; sites: Map<string, any>; earners: Map<string, any>; payouts: any[]; redemptions: any[]; draws: any[]; freeEntries: any[]; prog: Program; age(id: string, ms: number): void; settle(network: string, actualUsd: number): void; balance(earnerId: string): number } {
+export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial<Program> = {}): Store & { ads: Map<string, AdRow & { ip_hash: string }>; totals: Map<string, any>; sites: Map<string, any>; earners: Map<string, any>; accounts: Map<string, any>; taxForms: Map<string, any>; payouts: any[]; redemptions: any[]; draws: any[]; freeEntries: any[]; prog: Program; age(id: string, ms: number): void; settle(network: string, actualUsd: number): void; balance(earnerId: string): number } {
   const sites = new Map<string, any>();
   const totals = new Map<string, any>();
   const ads = new Map<string, any>();
   const earners = new Map<string, any>();
+  const accounts = new Map<string, any>();
+  const taxForms = new Map<string, any>();
+  const rates: { kind: string; key: string; at: number }[] = [];
+  const A31 = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const newCode = () => { const c = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => A31[b % 31]).join(""); return `VD-${c.slice(0, 4)}-${c.slice(4)}`; };
+  const pubAccount = (a: any) => ({ id: a.id, user_id: a.user_id, email: a.email, install_code: a.install_code, paypal_email: a.paypal_email, created_at: a.created_at, welcome_sent_at: a.welcome_sent_at });
   const payouts: any[] = [];
   const redemptions: any[] = [];
   const draws: any[] = [];
   const freeEntries: any[] = [];
-  const prog: Program = { user_share_pct: 50, est_ecpm_usd: null, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 15, max_earners_per_ip_day: 3, referral_pct: 10, hold_days: 30, ...programOverrides };
+  const prog: Program = { user_share_pct: 50, est_ecpm_usd: null, min_payout_usd: 10, daily_cap: 200, min_gap_seconds: 15, max_earners_per_ip_day: 3, referral_pct: 10, hold_days: 30, earnings_need_payout_info: true, max_installs_per_account: 5, ...programOverrides };
   const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
   const balance = (id: string) => r4(payouts.filter((p) => p.earner_id === id && p.status !== "void").reduce((s, p) => s + p.amount_usd, 0)
     - redemptions.filter((r) => r.earner_id === id && r.status !== "void").reduce((s, r) => s + r.amount_usd, 0));
   let codeN = 0;
   const imp: Impact = { cause_name: null, cause_url: null, unit_label: null, usd_per_unit: null, pledge_pct: null, donated_usd: 0, donated_updated_at: null, ...impact };
   return {
-    sites, totals, ads, earners, payouts, redemptions, draws, freeEntries, prog, balance,
+    sites, totals, ads, earners, accounts, taxForms, payouts, redemptions, draws, freeEntries, prog, balance,
     age(id, ms) {
       const a = ads.get(id); a.created_at = new Date(a.created_at.getTime() - ms);
       if (a.impression_at) a.impression_at = new Date(a.impression_at.getTime() - ms);
@@ -160,6 +166,60 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
       const first = !a.click_at; if (first) { a.click_at = new Date(); const t = totals.get(a.site_key); if (t) t.clicks++; }
       return { row: a, first };
     },
+    async ensureAccount(row) {
+      const have = [...accounts.values()].find((a) => a.user_id === row.user_id);
+      if (have) { have.email = row.email; return { account: pubAccount(have), created: false }; }
+      const a = { id: crypto.randomUUID(), ...row, install_code: newCode(), paypal_email: null, welcome_sent_at: null, created_at: new Date() };
+      accounts.set(a.id, a);
+      return { account: pubAccount(a), created: true };
+    },
+    async claimWelcome(accountId) {
+      const a = accounts.get(accountId); if (!a || a.welcome_sent_at) return false;
+      a.welcome_sent_at = new Date(); return true;
+    },
+    async releaseWelcome(accountId) { accounts.get(accountId).welcome_sent_at = null; },
+    async installs(accountId) {
+      return [...earners.values()].filter((e) => e.account_id === accountId).map((e) => ({ earner_id: e.id, kind: e.ref === "web-app" ? "web" as const : "install" as const, linked_at: e.linked_at, last_seen_at: e.last_seen_at ?? null }));
+    },
+    async taxForm(accountId) {
+      const t = taxForms.get(accountId);
+      return t ? { tin_type: t.tin_type, tin_last4: t.tin_last4, legal_name: t.legal_name, signed_at: t.signed_at } : null;
+    },
+    async saveTaxForm(accountId, f, ipHash, userAgent) {
+      // Like the SQL function: the clear TIN is never kept, only the last 4 and an opaque stand-in.
+      const { tin, ...rest } = f;
+      taxForms.set(accountId, { ...rest, tin_last4: tin.slice(-4), tin_enc: "enc:" + tin.length, ip_hash: ipHash, user_agent: userAgent, signed_at: new Date() });
+      return tin.slice(-4);
+    },
+    async setAccountPaypal(accountId, email) {
+      accounts.get(accountId).paypal_email = email;
+      for (const e of earners.values()) if (e.account_id === accountId) e.payout_email = email;
+    },
+    async rotateInstallCode(accountId) { const a = accounts.get(accountId); a.install_code = newCode(); return a.install_code; },
+    async findAccountByCode(code) {
+      const a = [...accounts.values()].find((x) => x.install_code === code);
+      return a ? pubAccount(a) : null;
+    },
+    async linkEarner(earnerId, accountId, maxInstalls) {
+      const e = earners.get(earnerId);
+      if (e.account_id === accountId) return "linked";
+      if (e.account_id) return "other";
+      if ([...earners.values()].filter((x) => x.account_id === accountId && x.ref !== "web-app").length >= maxInstalls) return "full";
+      e.account_id = accountId; e.linked_at = new Date();
+      e.payout_email = accounts.get(accountId).paypal_email ?? e.payout_email;
+      return "linked";
+    },
+    async webEarner(accountId, ipHash) {
+      const have = [...earners.values()].find((e) => e.account_id === accountId && e.ref === "web-app");
+      if (have) return have.id;
+      const { id } = await this.createEarner({ token_hash: "web:" + crypto.randomUUID(), ip_hash: ipHash, ref: "web-app", referred_by: null });
+      const e = earners.get(id); e.account_id = accountId; e.linked_at = new Date(); e.payout_email = accounts.get(accountId).paypal_email;
+      return id;
+    },
+    async earnerAccount(earnerId) { return earners.get(earnerId)?.account_id ?? null; },
+    async touchEarner(earnerId) { const e = earners.get(earnerId); if (e) e.last_seen_at = new Date(); },
+    async rateCount(kind, key, seconds) { return rates.filter((r) => r.kind === kind && r.key === key && r.at > Date.now() - seconds * 1000).length; },
+    async rateHit(kind, key) { rates.push({ kind, key, at: Date.now() }); },
     async stats(site) {
       const all = [...totals.entries()];
       const sum = (k: string) => all.reduce((s, [, t]) => s + t[k], 0);

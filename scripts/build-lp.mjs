@@ -5,12 +5,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 const BRAND = "Vibedough";
 const ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/lp";
-const AUTH = "https://mvnfgrydpdwaatkcsrdd.supabase.co/auth/v1";
-// Public anon key (ships in every Supabase site's JS; RLS is what protects data).
-const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12bmZncnlkcGR3YWF0a2NzcmRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4NTIyMzUsImV4cCI6MjA3MjQyODIzNX0.vPKEZnj8ACjfXpO7ueUvcKT1wBO0-JM-UwcOEvmqXRk";
-// Account step (password after email). Off until branded email (custom SMTP + site URL) is set;
-// ?acct=1 turns it on for one visit so it can be tested on the live pages.
-const ACCOUNTS_DEFAULT = false;
+// Account step: after the email, the sign-in popup (web/auth.js) emails a branded sign-in link and
+// offers SSO, and the person lands on /app. ?acct=0 turns it off for one visit (waitlist only).
+const ACCOUNTS_DEFAULT = true;
 
 const VARIANTS = {
   cash: {
@@ -137,16 +134,8 @@ button.go[disabled]{opacity:.7;cursor:progress}
 .chips label{display:inline-flex;align-items:center;gap:6px;font-size:15px;background:#fff;border:1.5px solid #B9C4DA;border-radius:999px;padding:7px 13px;cursor:pointer}
 .chips input{accent-color:var(--cobalt)}
 .chips label:has(input:checked){border-color:var(--cobalt);background:#E6ECFB}
-.pwrow{display:flex;gap:10px;max-width:480px;margin-top:12px}
-.pwrow .field{position:relative;flex:1;min-width:0}
-.pwrow input{width:100%;font:inherit;font-size:17px;padding:14px 64px 14px 16px;border:1.5px solid #B9C4DA;border-radius:var(--radius);background:#fff;color:var(--ink)}
-.pwrow input:focus{border-color:var(--cobalt);outline:none;box-shadow:0 0 0 3px rgba(43,80,200,.18)}
-.pwrow .show{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:600 14px/1 "Public Sans",sans-serif;background:none;border:0;color:var(--cobalt);padding:8px;cursor:pointer}
-form.join input[readonly]{background:var(--linen-2);color:var(--ink-soft)}
-.pwlabel{display:block;font-weight:600;font-size:15px;margin-top:16px}
 .linkbtn{background:none;border:0;padding:0;font:inherit;font-size:14px;color:var(--ink-soft);text-decoration:underline;cursor:pointer}
-@media (max-width:520px){.pwrow{flex-direction:column}}
-button.save{font:600 15px/1 "Public Sans",sans-serif;padding:10px 16px;border-radius:var(--radius);border:1.5px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+@media (max-width:520px){button.save{font:600 15px/1 "Public Sans",sans-serif;padding:10px 16px;border-radius:var(--radius);border:1.5px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
 
 /* The one bold thing: a terminal mid-thought. */
 .term{background:var(--term);color:var(--term-text);border-radius:14px;font:400 14.5px/1.65 "JetBrains Mono",ui-monospace,monospace;box-shadow:0 30px 60px -28px rgba(14,23,48,.55);overflow:hidden}
@@ -232,7 +221,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12.5 12.5 8.5 4.5l6.2 5.2Z" fill="#14213D"/><path d="M19.5 12.5l4-8-6.2 5.2Z" fill="#14213D"/><path d="M9.5 13.5c1.6-1.4 4-2 6.5-2s4.9.6 6.5 2c3 2.6 4.6 6.2 4 9.3-.6 3.2-4.6 5.2-10.5 5.2S6.1 26 5.5 22.8c-.6-3.1 1-6.7 4-9.3Z" fill="#2B50C8"/><ellipse cx="16" cy="11.2" rx="3.2" ry="2.1" fill="#B8892B"/></svg>
       ${BRAND.toLowerCase()}
     </a>
-    <a class="top-cta" href="#join-final">Get early access</a>
+    <a class="top-cta" href="#join-final" id="top-cta">Get early access</a>
   </header>
 
   <main>
@@ -320,8 +309,17 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const VARIANT = ${JSON.stringify(key)};
   const ADS = ${JSON.stringify(ADS)};
   const METERS = ${JSON.stringify(meters)};
-  const AUTH = ${JSON.stringify(AUTH)}, ANON = ${JSON.stringify(ANON)};
-  const ACCOUNTS = ${JSON.stringify(ACCOUNTS_DEFAULT)} || new URLSearchParams(location.search).get("acct") === "1";
+  const acctParam = new URLSearchParams(location.search).get("acct");
+  const ACCOUNTS = acctParam === "1" || (${JSON.stringify(ACCOUNTS_DEFAULT)} && acctParam !== "0");
+  // Signed in already: the header goes to the dashboard. Otherwise it opens the sign-in popup.
+  const top = document.getElementById("top-cta");
+  if (ACCOUNTS && top) {
+    let had = false;
+    try { had = !!localStorage.getItem("vd_session"); } catch (_) {}
+    top.textContent = had ? "Your dashboard" : "Sign in";
+    top.href = "/app";
+    if (!had) top.addEventListener("click", (e) => { if (window.VD) { e.preventDefault(); VD.openSignIn({ title: "Sign in to ${BRAND}", sub: "New here? This creates your free account." }); } });
+  }
 
   let session = "";
   try { session = sessionStorage.getItem("kn_s") || ""; } catch (_) {}
@@ -378,58 +376,10 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
     }));
   }
 
-  // Account step: the password field appears under the email they just gave.
-  function showPassword(form) {
-    const box = form.parentElement;
-    const input = form.querySelector("input[type=email]");
-    input.readOnly = true;
-    form.querySelector("button.go").hidden = true;
-    const id = "pw-" + (box.id || "x");
-    const wrap = document.createElement("form");
-    wrap.className = "pwform"; wrap.noValidate = true;
-    wrap.innerHTML = '<label class="pwlabel" for="' + id + '">Create a password</label>' +
-      '<div class="pwrow"><div class="field"><input id="' + id + '" type="password" minlength="10" required autocomplete="new-password" aria-describedby="' + id + '-hint">' +
-      '<button type="button" class="show" aria-controls="' + id + '">Show</button></div>' +
-      '<button class="go" type="submit">Create account</button></div>' +
-      '<p class="msg" role="alert" aria-live="polite"></p>' +
-      '<p class="micro" id="' + id + '-hint">At least 10 characters. We\\'ll email you a link to confirm your account. <button type="button" class="linkbtn skip">Skip for now</button></p>';
-    form.after(wrap);
-    box.querySelectorAll(":scope > .msg, :scope > .micro").forEach((n) => (n.hidden = true));
-    const pw = wrap.querySelector("input"), show = wrap.querySelector(".show"), msg = wrap.querySelector(".msg"), btn = wrap.querySelector("button.go");
-    pw.focus();
-    show.addEventListener("click", () => { const on = pw.type === "password"; pw.type = on ? "text" : "password"; show.textContent = on ? "Hide" : "Show"; });
-    wrap.querySelector(".skip").addEventListener("click", showDone);
-    wrap.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      msg.textContent = ""; msg.classList.remove("err");
-      if (pw.value.length < 10) { msg.textContent = "Use at least 10 characters."; msg.classList.add("err"); pw.focus(); return; }
-      btn.disabled = true; btn.textContent = "Creating…";
-      try {
-        const r = await fetch(AUTH + "/signup?redirect_to=" + encodeURIComponent(location.origin + "/try/welcome"), {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: ANON, authorization: "Bearer " + ANON },
-          body: JSON.stringify({ email, password: pw.value, data: { product: ${JSON.stringify(BRAND.toLowerCase())}, variant: VARIANT, utm } }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          const code = j.error_code || j.code || "";
-          throw new Error(code === "weak_password" ? "That password is too easy to guess. Try a longer one."
-            : code === "over_email_send_rate_limit" || r.status === 429 ? "Too many sign-ups right now. Try again in a few minutes."
-            : j.msg || j.error_description || "We couldn't create your account. Try again in a minute.");
-        }
-        pw.value = "";
-        document.querySelectorAll(".joinbox").forEach((b) => {
-          b.innerHTML = '<div class="done" role="status"><h3>Check your inbox.</h3><p>We sent a link to <b></b>. Click it to finish creating your account.</p>' +
-            '<p class="micro">No email in a few minutes? Check spam, or <button type="button" class="linkbtn again">use a different email</button>.</p></div>';
-          b.querySelector("b").textContent = email;
-          b.querySelector(".again").addEventListener("click", () => location.reload());
-        });
-      } catch (err) {
-        msg.textContent = err.message && err.message !== "Failed to fetch" ? err.message : "Couldn't reach us. Check your connection and try again.";
-        msg.classList.add("err");
-        btn.disabled = false; btn.textContent = "Create account";
-      }
-    });
+  // Account step: the popup sends their sign-in link right away; the 6-digit code works there too.
+  function openAccount() {
+    if (!window.VD) return;
+    VD.openSignIn({ email, autoSend: true, title: "Create your account", sub: "Free. One tap to confirm your email, then one line to install." });
   }
 
   document.querySelectorAll("form.join").forEach((form) => form.addEventListener("submit", async (e) => {
@@ -443,7 +393,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "Something went wrong on our side. Try again in a minute.");
       email = input.value.trim().toLowerCase();
-      if (ACCOUNTS) showPassword(form); else showDone();
+      showDone();
+      if (ACCOUNTS) openAccount();
     } catch (err) {
       msg.textContent = err.message && err.message !== "Failed to fetch" ? err.message : "Couldn't reach us. Check your connection and try again.";
       msg.classList.add("err");
@@ -452,6 +403,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   }));
 })();
 </script>
+<script src="/auth.js" defer></script>
 </body>
 </html>
 `;
@@ -493,26 +445,12 @@ a{color:var(--cobalt);font-weight:600}
 </head>
 <body>
 <main id="m" aria-live="polite">
-  <h1>Confirming your account…</h1>
+  <h1>Taking you to your account…</h1>
+  <p><a href="/app">Continue</a></p>
 </main>
 <script>
-(() => {
-  const h = new URLSearchParams(location.hash.slice(1));
-  const q = new URLSearchParams(location.search);
-  const m = document.getElementById("m");
-  const err = h.get("error_description") || q.get("error_description");
-  // Never leave tokens sitting in the address bar or history.
-  history.replaceState(null, "", location.pathname);
-  if (err) {
-    m.className = "err";
-    m.innerHTML = "<h1>That link didn't work.</h1><p></p><p>Links expire after a while and work once. Sign up again from the page you came from and we'll send a fresh one.</p>";
-    m.querySelector("p").textContent = err.replace(/\\+/g, " ") + ".";
-  } else if (h.get("access_token") || h.get("type") === "signup") {
-    m.innerHTML = "<h1>You're in.</h1><p>Your ${BRAND} account is confirmed. We'll email you the one-line install for Claude Code as soon as it opens.</p>";
-  } else {
-    m.innerHTML = "<h1>Nothing to confirm here.</h1><p>Open the link from the email we sent you to confirm your account.</p>";
-  }
-})();
+// Old confirmation links land here; /app finishes any sign-in in the URL and takes it from there.
+location.replace("/app" + location.search + location.hash);
 </script>
 </body>
 </html>

@@ -13,6 +13,15 @@
 //   POST /earner/donate   {amount?} + Bearer             -> donates the balance (or part) to charity: water
 //   GET  /ledger                                         -> public totals: credited, paid out, donated
 //   POST /draw/free-entry {email}                        -> the no-purchase entry to the open draw
+// Accounts (Vibedough web sign-in; Supabase Auth session in Authorization: Bearer <access token>):
+//   POST /auth/email      {email}                        -> {ok} and a branded sign-in email (link + 6-digit code)
+//   GET  /account/me                                     -> install code, installs, payout setup, earnings once payout-ready
+//   POST /account/paypal  {email}                        -> where cash goes, for the account and every linked install
+//   POST /account/w9      {legal_name, ..., tin, certify, signature} -> {ok, tin_last4}
+//   POST /account/code    {}                             -> a fresh install code (the old one stops working)
+//   POST /earner/link     {code} + earner Bearer         -> joins this install to the account that owns the code
+//   POST /account/ad      {query}                        -> a sponsored line for the web chat, credited to the account
+//   POST /account/chat    {messages: [{role, content}]}  -> {reply} (503 until a model key is set)
 // Referrals: POST /earner takes {invite: "<code>"}; the referrer earns 10% of the friend's share,
 // paid out of the house half at settlement (see settle()). Never multi-level.
 //   POST /impression/external {network, site, request_id, ad_id?, earner?} -> {ok, counted, credited}
@@ -23,6 +32,8 @@
 // to the earner, within the program's daily cap and minimum gap. Money is only ever owed
 // from settled network revenue (see the settle() SQL function), never from estimates.
 import { EMBED_JS } from "./embed.ts";
+import { type Account, type AuthApi, type Install, installCommand, type Mailer, normalizeInstallCode, parseTaxForm, signInEmail, type TaxForm, type TaxFormSummary, welcomeEmail } from "./accounts.ts";
+import type { ChatFn, ChatTurn } from "./chat.ts";
 import { type Ad, type Attempt, confirmImpression, reportClick, runChain } from "./networks.ts";
 
 export type AdRow = { id: string; site_key: string; provider: string; live: boolean; earner_id?: string | null; tracking: Record<string, unknown>; click_url: string | null; created_at: Date; impression_at: Date | null; click_at: Date | null };
@@ -30,7 +41,8 @@ export type Impact = { cause_name: string | null; cause_url: string | null; unit
 // Actual publisher earnings as a network's dashboard reported them (newest report per network).
 export type Earning = { network: string; site_key: string | null; earned_usd: number; paid_waits: number | null; clicks: number | null; as_of: Date | string; source: string };
 // Terms of the earner program, one row in the database.
-export type Program = { user_share_pct: number; est_ecpm_usd: number | null; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; max_earners_per_ip_day: number; referral_pct: number; hold_days: number };
+export type Program = { user_share_pct: number; est_ecpm_usd: number | null; min_payout_usd: number; daily_cap: number; min_gap_seconds: number; max_earners_per_ip_day: number; referral_pct: number; hold_days: number;
+  earnings_need_payout_info?: boolean; max_installs_per_account?: number };
 export type EarnerSummary = { earner_id: string; status: string; credited_total: number; credited_today: number; pending_waits: number; owed_usd: number; paid_usd: number; payout_email: string | null; created_at: Date | string;
   balance_usd: number; credited_usd: number; donated_usd: number; referral_code: string; referrals: number; referral_earned_usd: number; auto_exit: "cash" | "donate"; first_credit_at: Date | string | null };
 export type Ledger = { credited_to_users_usd: number; paid_out_usd: number; donated_usd: number; donation_pending_usd: number; people_paid: number; last_activity_at: Date | string | null };
@@ -65,6 +77,28 @@ export interface Store {
   creditImpression(adId: string, earnerId: string, dailyCap: number, gapSeconds: number): Promise<boolean>;
   earnerSummary(earnerId: string): Promise<EarnerSummary | null>;
   setPayoutEmail(earnerId: string, email: string): Promise<void>;
+  // Accounts. ensureAccount creates the row (and its install code) on the first call for a user.
+  ensureAccount(row: { user_id: string; email: string; provider: string; source: Record<string, unknown> | null }): Promise<{ account: Account; created: boolean }>;
+  // Atomic claim: true exactly once per account, so the welcome email goes out once.
+  claimWelcome(accountId: string): Promise<boolean>;
+  // Undoes the claim after a failed send, so the next visit tries again.
+  releaseWelcome(accountId: string): Promise<void>;
+  installs(accountId: string): Promise<Install[]>;
+  taxForm(accountId: string): Promise<TaxFormSummary | null>;
+  saveTaxForm(accountId: string, form: TaxForm, ipHash: string, userAgent: string): Promise<string>;
+  // Sets the account's PayPal email and copies it to every linked install (payouts are per install).
+  setAccountPaypal(accountId: string, email: string): Promise<void>;
+  rotateInstallCode(accountId: string): Promise<string>;
+  findAccountByCode(code: string): Promise<Account | null>;
+  // "linked" (now or already, to this account), "other" (linked to another account) or "full".
+  linkEarner(earnerId: string, accountId: string, maxInstalls: number): Promise<"linked" | "other" | "full">;
+  earnerAccount(earnerId: string): Promise<string | null>;
+  // The account's own earner for views in the web chat (created on first use; it has no token).
+  webEarner(accountId: string, ipHash: string): Promise<string>;
+  // Marks an install as alive (throttled in the store). Drives "installed" on the account page.
+  touchEarner(earnerId: string): Promise<void>;
+  rateCount(kind: string, key: string, seconds: number): Promise<number>;
+  rateHit(kind: string, key: string): Promise<void>;
   stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact; earnings?: Earning[] }>;
 }
 export type Keys = { idlen?: string; admesh?: string; agentads?: string };
@@ -111,6 +145,19 @@ export function maskEmail(email: string | null): string | null {
   const [user, domain] = email.split("@");
   return `${user.slice(0, 1)}***@${domain}`;
 }
+// A Supabase Auth access token (a JWT). Auth itself checks it; this only rejects obvious junk.
+const JWT_RE = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+function sessionToken(req: Request): string {
+  const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
+  return m && m[1].length < 8192 && JWT_RE.test(m[1]) ? m[1] : "";
+}
+// The site key for views in the Vibedough web chat.
+const WEB_SITE = "vibedough-app";
+const SIGNIN_PER_EMAIL_HOUR = 5;
+const SIGNIN_PER_NETWORK_HOUR = 20;
+const LINK_FAILS_PER_HOUR = 10;
+// An install counts as installed while it has been seen this recently.
+const INSTALL_FRESH_DAYS = 30;
 function bearer(req: Request): string {
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
   return m && TOKEN_RE.test(m[1]) ? m[1] : "";
@@ -137,12 +184,77 @@ export function impactSummary(impact: Impact, totalWaits: number) {
   };
 }
 
-export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; salt: string; fetch?: typeof fetch; minImpressionMs?: number; rateLimitPerMin?: number; log?: (m: string) => void }) {
+export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; salt: string; fetch?: typeof fetch; minImpressionMs?: number; rateLimitPerMin?: number; log?: (m: string) => void;
+  auth?: AuthApi; mailer?: Mailer; appUrl?: string; chat?: ChatFn; chatEnabled?: () => boolean; chatPerDay?: number }) {
   const { store, keys, baseUrl, salt } = opts;
+  const appUrl = opts.appUrl || "https://vibedough.com/app";
+  const mailer: Mailer = opts.mailer || (async () => false);
+  const chatPerDay = opts.chatPerDay ?? 50;
+
   const f = opts.fetch || fetch;
   const minMs = opts.minImpressionMs ?? 900;
   const rate = opts.rateLimitPerMin ?? 30;
   const log = opts.log || (() => {});
+
+  // One sponsored line: the network chain, then the ad row (credited later, at its impression).
+  async function serveAd(o: { site: string; query: string; response: string; sessionId: string; origin: string; ipHash: string; earnerId: string | null; sandbox: boolean; debug?: boolean }) {
+    let host = "chat.example";
+    try { if (o.origin) host = new URL(o.origin).host || host; } catch (_) { /* keep default */ }
+    const ctx = { query: o.query, response: o.response, sessionId: o.sessionId, host };
+    const { ad, attempts } = await runChain(ctx, o.sandbox ? {} : keys, f);
+    const id = await store.insertAd({ site_key: o.sandbox ? SANDBOX_SITE : o.site, provider: ad.provider, live: ad.live, tracking: ad.tracking, click_url: ad.clickUrl, ip_hash: o.ipHash, origin: o.origin, earner_id: o.earnerId });
+    const st = await store.stats(null);
+    log(`ad site=${o.site}${o.sandbox ? " (sandbox)" : ""} provider=${ad.provider} ${attempts.map((a: Attempt) => `${a.provider}:${a.result}${a.note ? "(" + a.note + ")" : ""}`).join(" ")}`);
+    return { id, ad: publicAd(ad, `${baseUrl}/click?id=${id}`), impact: impactSummary(st.impact, st.total.sponsored_waits), sandbox: o.sandbox || undefined, attempts: o.debug ? attempts : undefined };
+  }
+
+  // The signed-in person's account, created on first sight. Sends the welcome email exactly once.
+  async function signedIn(req: Request): Promise<{ account: Account } | Response> {
+    if (!opts.auth) return json({ error: "accounts are not set up" }, 503);
+    const t = sessionToken(req);
+    if (!t) return json({ error: "sign in first" }, 401);
+    const user = await opts.auth.getUser(t);
+    if (!user || !user.email) return json({ error: "your session expired, sign in again" }, 401);
+    const src = user.meta && typeof user.meta.source === "object" && user.meta.source ? user.meta.source as Record<string, unknown> : null;
+    const { account, created } = await store.ensureAccount({ user_id: user.id, email: user.email.toLowerCase(), provider: user.provider || "email", source: src });
+    if (created) log(`account created ${account.id} via ${user.provider || "email"}`);
+    if (!account.welcome_sent_at && (await store.claimWelcome(account.id))) {
+      const sent = await mailer(welcomeEmail(account.email, account.install_code, appUrl, installCommand(account.install_code))).catch(() => false);
+      log(`welcome email ${sent ? "sent" : "FAILED, will retry on next visit"} ${account.id}`);
+      if (!sent) await store.releaseWelcome(account.id);
+    }
+    return { account };
+  }
+
+  async function accountView(account: Account) {
+    const [installs, tax, p] = await Promise.all([store.installs(account.id), store.taxForm(account.id), store.program()]);
+    const fresh = Date.now() - INSTALL_FRESH_DAYS * 86400e3;
+    // The web chat's own earner earns for the account but is not an install.
+    const plugins = installs.filter((i) => i.kind === "install");
+    const seen = plugins.map((i) => (i.last_seen_at ? new Date(i.last_seen_at as string).getTime() : 0));
+    const lastSeen = seen.length ? Math.max(...seen) : 0;
+    const payoutReady = !!account.paypal_email && !!tax;
+    const gated = (p.earnings_need_payout_info ?? true) && !payoutReady;
+    let earnings = null;
+    if (!gated) {
+      const sums = (await Promise.all(installs.map((i) => store.earnerSummary(i.earner_id)))).filter((x): x is EarnerSummary => !!x);
+      const add = (k: keyof EarnerSummary) => money4(sums.reduce((s, x) => s + Number(x[k] || 0), 0));
+      const ecpm = p.est_ecpm_usd === null ? null : Number(p.est_ecpm_usd);
+      const pending = sums.reduce((s, x) => s + x.pending_waits, 0);
+      earnings = {
+        balance_usd: add("balance_usd"), credited_usd: add("credited_usd"), paid_usd: add("paid_usd"), donated_usd: add("donated_usd"),
+        views_today: sums.reduce((s, x) => s + x.credited_today, 0), views_total: sums.reduce((s, x) => s + x.credited_total, 0), pending_views: pending,
+        est_pending_usd: ecpm === null ? null : money4((pending / 1000) * ecpm * (Number(p.user_share_pct) / 100)),
+        min_payout_usd: Number(p.min_payout_usd), share_pct: Number(p.user_share_pct),
+      };
+    }
+    return {
+      email: account.email, install_code: account.install_code, install_command: installCommand(account.install_code), created_at: account.created_at,
+      installs: plugins.length, installed: lastSeen > fresh, last_seen_at: lastSeen ? new Date(lastSeen).toISOString() : null,
+      paypal_email: maskEmail(account.paypal_email), w9: tax ? { on_file: true, tin_type: tax.tin_type, tin_last4: tax.tin_last4, signed_at: tax.signed_at } : { on_file: false },
+      payout_ready: payoutReady, earnings_locked: gated, earnings,
+    };
+  }
 
   return async function handle(req: Request): Promise<Response> {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -169,20 +281,14 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         const sandbox = isDevOrigin(origin, site);
         if (!sandbox && !(await store.ensureSite(site, origin))) return json({ error: "site disabled" }, 403);
         if ((await store.recentAds(ipHash, 60)) >= rate) return json({ error: "rate limited" }, 429, { "Retry-After": "30" });
-        let host = "chat.example";
-        try { if (origin) host = new URL(origin).host || host; } catch (_) { /* keep default */ }
-        const ctx = { query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), host };
-        const { ad, attempts } = await runChain(ctx, sandbox ? {} : keys, f);
         // An earner token that does not resolve to an active earner just means no credit; the ad still serves.
         let earnerId: string | null = null;
         if (!sandbox && typeof b.earner === "string" && TOKEN_RE.test(b.earner)) {
           const e = await store.findEarner(await tokenHash(b.earner));
           if (e && e.status === "active") earnerId = e.id;
         }
-        const id = await store.insertAd({ site_key: sandbox ? SANDBOX_SITE : site, provider: ad.provider, live: ad.live, tracking: ad.tracking, click_url: ad.clickUrl, ip_hash: ipHash, origin, earner_id: earnerId });
-        const st = await store.stats(null);
-        log(`ad site=${site}${sandbox ? " (sandbox)" : ""} provider=${ad.provider} ${attempts.map((a: Attempt) => `${a.provider}:${a.result}${a.note ? "(" + a.note + ")" : ""}`).join(" ")}`);
-        return json({ id, ad: publicAd(ad, `${baseUrl}/click?id=${id}`), impact: impactSummary(st.impact, st.total.sponsored_waits), sandbox: sandbox || undefined, attempts: b.debug ? attempts : undefined });
+        if (earnerId) await store.touchEarner(earnerId);
+        return json(await serveAd({ site, query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox, debug: !!b.debug }));
       }
 
       if (route === "/event" && req.method === "POST") {
@@ -221,6 +327,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           const e = await store.findEarner(await tokenHash(b.earner));
           if (e && e.status === "active") earnerId = e.id;
         }
+        if (earnerId) await store.touchEarner(earnerId);
         const adId = typeof b.ad_id === "string" ? b.ad_id.slice(0, 128) : null;
         const id = await store.insertExternalImpression({ site_key: site, provider: network, tracking: { requestId, adId, clientReported: true }, ip_hash: ipHash, origin, earner_id: earnerId });
         if (!id) return json({ ok: true, counted: false, duplicate: true });
@@ -266,7 +373,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (!token) return json({ error: "earner token required" }, 401);
         const e = await store.findEarner(await tokenHash(token));
         if (!e) return json({ error: "unknown earner" }, 401);
-        const [sum, p, draw] = await Promise.all([store.earnerSummary(e.id), store.program(), store.openDraw()]);
+        const [sum, p, draw, accountId] = await Promise.all([store.earnerSummary(e.id), store.program(), store.openDraw(), store.earnerAccount(e.id), store.touchEarner(e.id)]);
         if (!sum) return json({ error: "unknown earner" }, 401);
         const ecpm = p.est_ecpm_usd === null ? null : Number(p.est_ecpm_usd);
         const holdDays = Number(p.hold_days ?? 30);
@@ -275,6 +382,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         return json({
           ...sum,
           first_credit_at: undefined,
+          account_linked: !!accountId,
           payout_email: maskEmail(sum.payout_email),
           owed_usd: money4(Number(sum.balance_usd)),
           balance_usd: money4(Number(sum.balance_usd)),
@@ -348,6 +456,111 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         const r = await store.addFreeEntry(d.id, email, ipHash);
         if (r === "limited") return json({ error: "Too many entries from this network today." }, 429);
         return json({ ok: true, entered: r === "added", already_today: r === "already", draw: d.name });
+      }
+
+      if (route === "/earner/link" && req.method === "POST") {
+        const token = bearer(req);
+        if (!token) return json({ error: "earner token required" }, 401);
+        const e = await store.findEarner(await tokenHash(token));
+        if (!e || e.status !== "active") return json({ error: "unknown earner" }, 401);
+        if ((await store.rateCount("link_fail", ipHash, 3600)) >= LINK_FAILS_PER_HOUR) return json({ error: "too many tries, wait an hour" }, 429, { "Retry-After": "3600" });
+        const b = await req.json().catch(() => ({}));
+        const code = normalizeInstallCode(b.code);
+        const acct = code ? await store.findAccountByCode(code) : null;
+        if (!acct) {
+          await store.rateHit("link_fail", ipHash);
+          return json({ error: "that install code doesn't match an account. Copy it again from vibedough.com/app" }, 404);
+        }
+        const p = await store.program();
+        const r = await store.linkEarner(e.id, acct.id, p.max_installs_per_account ?? 5);
+        if (r === "other") return json({ error: "this install is already linked to a different account" }, 409);
+        if (r === "full") return json({ error: `an account can link up to ${p.max_installs_per_account ?? 5} installs` }, 409);
+        await store.touchEarner(e.id);
+        log(`earner ${e.id} linked to account ${acct.id}`);
+        return json({ ok: true, email: maskEmail(acct.email), paypal_email: maskEmail(acct.paypal_email) });
+      }
+
+      if (route === "/auth/email" && req.method === "POST") {
+        if (!opts.auth) return json({ error: "accounts are not set up" }, 503);
+        const b = await req.json().catch(() => ({}));
+        const email = String(b.email || "").trim().toLowerCase();
+        if (email.length > 254 || !EMAIL_RE.test(email)) return json({ error: "Enter a valid email address." }, 400);
+        const emailKey = await sha(`${email}|${salt}`);
+        if ((await store.rateCount("signin_email", emailKey, 3600)) >= SIGNIN_PER_EMAIL_HOUR) return json({ error: "We've sent a few links already. Check your inbox (and spam), or try again in an hour." }, 429, { "Retry-After": "3600" });
+        if ((await store.rateCount("signin_net", ipHash, 3600)) >= SIGNIN_PER_NETWORK_HOUR) return json({ error: "Too many sign-ins from this network. Try again in an hour." }, 429, { "Retry-After": "3600" });
+        await Promise.all([store.rateHit("signin_email", emailKey), store.rateHit("signin_net", ipHash)]);
+        const link = await opts.auth.signInLink(email);
+        if (!link) return json({ error: "We couldn't send a link to that address. Check it and try again." }, 502);
+        const url = `${appUrl}?th=${encodeURIComponent(link.tokenHash)}&tt=${encodeURIComponent(link.type)}`;
+        const sent = await mailer(signInEmail(email, url, link.otp)).catch(() => false);
+        log(`sign-in email ${sent ? "sent" : "FAILED"}`);
+        if (!sent) return json({ error: "Our email didn't go out. Try again in a minute." }, 502);
+        return json({ ok: true });
+      }
+
+      if (route === "/account/me" && req.method === "GET") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        return json(await accountView(s.account), 200, { "Cache-Control": "no-store" });
+      }
+
+      if (route === "/account/paypal" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const b = await req.json().catch(() => ({}));
+        const email = String(b.email || "").trim().toLowerCase();
+        if (email.length > 254 || !EMAIL_RE.test(email)) return json({ error: "Enter the email your PayPal account uses." }, 400);
+        await store.setAccountPaypal(s.account.id, email);
+        return json({ ok: true, paypal_email: maskEmail(email) });
+      }
+
+      if (route === "/account/w9" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const b = await req.json().catch(() => ({}));
+        const r = parseTaxForm(b && typeof b === "object" ? b : {});
+        if ("error" in r) return json({ error: r.error }, 400);
+        const last4 = await store.saveTaxForm(s.account.id, r.form, ipHash, (req.headers.get("user-agent") || "").slice(0, 300));
+        log(`w9 saved for account ${s.account.id}`);
+        return json({ ok: true, tin_type: r.form.tin_type, tin_last4: last4 });
+      }
+
+      if (route === "/account/ad" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const b = await req.json().catch(() => ({}));
+        const query = String(b.query || "").slice(0, 500).trim();
+        if (!query) return json({ error: "query required" }, 400);
+        if ((await store.recentAds(ipHash, 60)) >= rate) return json({ error: "rate limited" }, 429, { "Retry-After": "30" });
+        const sandbox = isDevOrigin(origin, WEB_SITE);
+        if (!sandbox && !(await store.ensureSite(WEB_SITE, origin))) return json({ error: "site disabled" }, 403);
+        const earnerId = sandbox ? null : await store.webEarner(s.account.id, ipHash);
+        return json(await serveAd({ site: WEB_SITE, query, response: "", sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox }));
+      }
+
+      if (route === "/account/chat" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        if (!opts.chat || (opts.chatEnabled && !opts.chatEnabled())) return json({ error: "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        const b = await req.json().catch(() => ({}));
+        const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
+        const turns: ChatTurn[] = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+          .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+        while (turns.length && turns[0].role !== "user") turns.shift();
+        if (!turns.length || turns[turns.length - 1].role !== "user") return json({ error: "send a message" }, 400);
+        if ((await store.rateCount("chat", s.account.id, 86400)) >= chatPerDay) return json({ error: `That's today's ${chatPerDay} messages. More tomorrow.` }, 429);
+        await store.rateHit("chat", s.account.id);
+        const r = await opts.chat(turns);
+        if ("refused" in r) return json({ reply: "I can't help with that one. Try asking another way." });
+        if ("error" in r) { log(`chat error ${r.error}`); return json({ error: "The chat is busy. Try again in a moment." }, 502); }
+        return json({ reply: r.text });
+      }
+
+      if (route === "/account/code" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const code = await store.rotateInstallCode(s.account.id);
+        return json({ ok: true, install_code: code, install_command: installCommand(code) });
       }
 
       if (route === "/stats" && req.method === "GET") {

@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#EEF2F8">
+<title>Vibedough</title>
+<meta name="description" content="Your Vibedough account: install, earnings and payouts.">
+<link rel="preconnect" href="https://mvnfgrydpdwaatkcsrdd.supabase.co" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --linen:#EEF2F8; --linen-2:#E3E9F3; --ink:#14213D; --ink-soft:#4A5878; --cobalt:#2B50C8; --cobalt-deep:#1F3DA0;
+  --brass:#B8892B; --term:#0E1730; --term-line:#24325A; --term-text:#D7DEEE; --term-dim:#7F8BAA; --ok:#1F7A55; --err:#B3261E;
+  --line:#D5DDEA; --radius:10px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--linen);color:var(--ink);font:400 17px/1.6 "Public Sans",system-ui,sans-serif;min-height:100vh;min-height:100dvh}
+a{color:var(--cobalt)}
+:focus-visible{outline:3px solid var(--cobalt);outline-offset:2px;border-radius:4px}
+[hidden]{display:none!important}
+.wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+header.top{display:flex;align-items:center;justify-content:space-between;padding:20px 0}
+.logo{display:flex;align-items:center;gap:10px;font:400 24px/1 "Young Serif",Georgia,serif;color:var(--ink);text-decoration:none}
+.logo svg{width:30px;height:30px}
+.who{display:flex;align-items:center;gap:14px;font-size:14px;color:var(--ink-soft)}
+.who button{font:600 14px/1 "Public Sans",sans-serif;background:none;border:0;color:var(--ink);border-bottom:2px solid var(--brass);padding:0 0 2px;cursor:pointer}
+h1{font:400 clamp(32px,4.4vw,48px)/1.08 "Young Serif",Georgia,serif;letter-spacing:-.01em;margin:8px 0 12px}
+h2{font:400 26px/1.2 "Young Serif",Georgia,serif;margin:0 0 6px}
+.lead{font-size:18px;color:var(--ink-soft);margin:0 0 28px;max-width:52ch}
+.card{background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 0 rgba(20,33,61,.04),0 12px 30px -22px rgba(14,23,48,.35)}
+.muted{color:var(--ink-soft)}
+.small{font-size:14px}
+.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:24px;align-items:start;padding-bottom:64px}
+.stack{display:grid;gap:24px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;border-radius:var(--radius);border:0;background:var(--cobalt);color:#fff;font:600 16px/1 "Public Sans",sans-serif;cursor:pointer;text-decoration:none}
+.btn:hover{background:var(--cobalt-deep)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.btn.ghost:hover{background:var(--linen-2)}
+.btn[disabled]{opacity:.7;cursor:progress}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--cobalt);font-weight:600;cursor:pointer;text-decoration:underline}
+input.in,select.in{width:100%;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #B9C4DA;border-radius:var(--radius);background:#fff;color:var(--ink)}
+input.in:focus,select.in:focus{outline:none;border-color:var(--cobalt);box-shadow:0 0 0 3px rgba(43,80,200,.18)}
+label.f{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+.row{display:flex;gap:10px}
+.row>*{flex:1;min-width:0}
+.msg{font-size:14px;min-height:1.4em;margin:8px 0 0}
+.msg.err{color:var(--err)} .msg.ok{color:var(--ok)}
+
+/* The install step: the one bold thing, a terminal with your line in it. */
+.term{background:var(--term);color:var(--term-text);border-radius:14px;font:400 14px/1.6 "JetBrains Mono",ui-monospace,monospace;overflow:hidden;box-shadow:0 30px 60px -28px rgba(14,23,48,.55)}
+.term .bar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--term-line);color:var(--term-dim);font-size:12.5px}
+.term .cmd{padding:18px;word-break:break-all;color:#fff}
+.term .cmd .p{color:#6B7899;user-select:none}
+.term .cmd .code{color:#3DDC97}
+.copy{font:600 13px/1 "Public Sans",sans-serif;background:#2B50C8;color:#fff;border:0;border-radius:6px;padding:8px 12px;cursor:pointer}
+.copy.done{background:#1F7A55}
+ol.how{margin:20px 0 0;padding:0;list-style:none;counter-reset:s;display:grid;gap:14px}
+ol.how li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}
+ol.how li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--ink);font:400 15px/1 "Young Serif",serif}
+.waiting{display:flex;align-items:center;gap:10px;margin-top:20px;font-size:15px;color:var(--ink-soft)}
+.pulse{width:10px;height:10px;border-radius:50%;background:var(--brass);animation:p 1.4s infinite}
+@keyframes p{0%,100%{opacity:.35}50%{opacity:1}}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--linen-2);border-radius:8px;padding:6px 10px;font:600 14px/1.2 "JetBrains Mono",monospace}
+
+/* Setup checklist */
+ul.steps{list-style:none;margin:16px 0 0;padding:0}
+ul.steps>li{border-top:1px solid var(--line);padding:16px 0}
+ul.steps>li:first-child{border-top:0;padding-top:4px}
+.sh{display:flex;align-items:center;gap:12px}
+.tick{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;font:700 14px/1 "Public Sans";border:1.5px solid #B9C4DA;color:transparent}
+.done .tick{background:var(--ok);border-color:var(--ok);color:#fff}
+.sh b{font-size:17px}
+.sh .val{margin-left:auto;font-size:14px;color:var(--ink-soft);text-align:right}
+.sbody{margin:12px 0 0 38px}
+
+/* Earnings */
+.money{font:400 clamp(40px,6vw,56px)/1 "Young Serif",Georgia,serif;margin:6px 0 4px}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+.kv div{background:var(--linen);border-radius:10px;padding:12px 14px}
+.kv b{display:block;font-size:20px}
+.kv span{font-size:13px;color:var(--ink-soft)}
+.locked{position:relative}
+.locked .blur{filter:blur(7px);user-select:none;pointer-events:none}
+.locked .lock{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:16px}
+.locked .lock p{background:#fff;border-radius:12px;padding:14px 16px;margin:0;max-width:30ch;box-shadow:0 10px 30px -12px rgba(14,23,48,.35);font-size:15px}
+
+/* W-9 */
+.w9 fieldset{border:0;padding:0;margin:0}
+.radios{display:flex;gap:10px;flex-wrap:wrap}
+.radios label{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #B9C4DA;border-radius:999px;padding:8px 14px;font-size:15px;cursor:pointer;background:#fff}
+.radios label:has(input:checked){border-color:var(--cobalt);background:#E6ECFB}
+.cert{font-size:13px;color:var(--ink-soft);background:var(--linen);border-radius:10px;padding:12px 14px;margin:16px 0 10px}
+.cert ol{margin:6px 0 0;padding-left:18px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:15px}
+.check input{margin-top:5px;width:18px;height:18px;accent-color:var(--cobalt)}
+
+/* Sign-in page */
+.center{display:grid;place-items:center;padding:24px 0 72px}
+.center .card{width:100%;max-width:420px;padding:28px 24px}
+
+/* Mobile: tabs + chat */
+.tabs{display:none}
+.chat{display:flex;flex-direction:column;height:calc(100dvh - 140px);min-height:420px}
+.log{flex:1;overflow-y:auto;padding:8px 0 12px;display:flex;flex-direction:column;gap:12px}
+.bubble{max-width:88%;padding:11px 14px;border-radius:16px;font-size:16px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+.bubble.me{align-self:flex-end;background:var(--cobalt);color:#fff;border-bottom-right-radius:6px}
+.bubble.ai{align-self:flex-start;background:#fff;border-bottom-left-radius:6px}
+.bubble.ai pre{background:var(--term);color:var(--term-text);padding:10px;border-radius:8px;overflow-x:auto;font:400 13px/1.5 "JetBrains Mono",monospace;white-space:pre}
+.thinking{align-self:flex-start;color:var(--ink-soft);font-size:14px;display:flex;align-items:center;gap:8px}
+.sponsor{align-self:stretch;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;text-decoration:none;color:var(--ink);background:#fff;border-left:3px solid #6E8BFF;border-radius:10px;padding:10px 12px;font-size:14px}
+.sponsor .tag{font:600 10.5px/1.6 "Public Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#0E1730;background:#8EA6FF;border-radius:4px;padding:1px 6px}
+.sponsor .cta{color:var(--cobalt);font-weight:600;margin-left:auto}
+.compose{display:flex;gap:8px;padding:10px 0 calc(10px + env(safe-area-inset-bottom))}
+.compose textarea{flex:1;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #B9C4DA;border-radius:22px;resize:none;max-height:140px;background:#fff;color:var(--ink)}
+.compose textarea:focus{outline:none;border-color:var(--cobalt)}
+.compose button{width:48px;height:48px;border-radius:50%;border:0;background:var(--cobalt);color:#fff;font-size:20px;cursor:pointer;flex:none;align-self:flex-end}
+.notice{background:#fff;border-radius:12px;padding:12px 14px;font-size:14px;color:var(--ink-soft)}
+.skeleton{height:160px;border-radius:14px;background:linear-gradient(90deg,#E3E9F3,#EEF2F8,#E3E9F3);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+
+@media (max-width:900px){ .grid{grid-template-columns:1fr} }
+@media (max-width:520px){
+  body{font-size:16px}
+  .wrap{padding:0 16px}
+  header.top{padding:14px 0}
+  .card{padding:18px}
+  .row{flex-direction:column;gap:0}
+  .kv{grid-template-columns:1fr 1fr}
+  .who span{display:none}
+}
+body.mobile .tabs{display:flex;gap:6px;background:var(--linen-2);border-radius:12px;padding:4px;margin:0 0 12px}
+body.mobile .tabs button{flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;font:600 15px/1 "Public Sans",sans-serif;color:var(--ink-soft);cursor:pointer}
+body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(14,23,48,.12)}
+@media (prefers-reduced-motion:reduce){.pulse,.skeleton{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="/" aria-label="Vibedough home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12.5 12.5 8.5 4.5l6.2 5.2Z" fill="#14213D"/><path d="M19.5 12.5l4-8-6.2 5.2Z" fill="#14213D"/><path d="M9.5 13.5c1.6-1.4 4-2 6.5-2s4.9.6 6.5 2c3 2.6 4.6 6.2 4 9.3-.6 3.2-4.6 5.2-10.5 5.2S6.1 26 5.5 22.8c-.6-3.1 1-6.7 4-9.3Z" fill="#2B50C8"/><ellipse cx="16" cy="11.2" rx="3.2" ry="2.1" fill="#B8892B"/></svg>
+      vibedough
+    </a>
+    <div class="who" id="who" hidden><span id="who-email"></span><button type="button" id="signout">Sign out</button></div>
+  </header>
+  <main id="main" aria-live="polite"><div class="skeleton" aria-label="Loading"></div></main>
+</div>
+
+<script src="/auth.js"></script>
+<script>
+(() => {
+  const main = document.getElementById("main");
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const money = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = (n) => Number(n || 0).toLocaleString("en-US");
+  // Phones and tablets get the chat; computers get the install step until it checks in.
+  const mobile = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    || (matchMedia("(pointer: coarse)").matches && innerWidth < 900);
+  document.body.classList.toggle("mobile", mobile);
+  let acct = null, poll = null, tab = "chat";
+
+  const STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI AA AE AP".split(" ");
+  const CLASSES = [["individual", "Individual / sole proprietor"], ["llc_s", "LLC taxed as S corp"], ["llc_c", "LLC taxed as C corp"], ["llc_p", "LLC taxed as partnership"], ["s_corp", "S corporation"], ["c_corp", "C corporation"], ["partnership", "Partnership"], ["trust_estate", "Trust / estate"], ["other", "Other"]];
+
+  function signedOutView(note) {
+    stopPoll();
+    document.getElementById("who").hidden = true;
+    main.innerHTML = `<div class="center"><div class="card"><div id="si"></div></div></div>`;
+    if (note) main.querySelector(".card").insertAdjacentHTML("afterbegin", `<p class="msg err" style="margin:0 0 12px">${esc(note)}</p>`);
+    VD.mountSignIn(document.getElementById("si"), { title: "Sign in to Vibedough", sub: "New here? This creates your free account.", onSignedIn: load });
+  }
+
+  async function load() {
+    const r = await VD.api("/account/me");
+    if (r.status === 401) return signedOutView();
+    if (r.status !== 200) { main.innerHTML = `<div class="center"><div class="card"><h2>We hit a snag.</h2><p class="muted">${esc(r.data.error || "Try again in a minute.")}</p><button class="btn" id="retry">Try again</button></div></div>`; document.getElementById("retry").onclick = load; return; }
+    acct = r.data;
+    document.getElementById("who").hidden = false;
+    document.getElementById("who-email").textContent = acct.email;
+    render();
+  }
+
+  function render() {
+    if (mobile) return renderMobile();
+    if (!acct.installed) return renderInstall();
+    stopPoll();
+    renderDashboard(main);
+  }
+
+  // ------------------------------------------------------------ install (desktop)
+  function renderInstall() {
+    main.innerHTML = `<div class="grid"><div>
+      <h1>One line and you're earning.</h1>
+      <p class="lead">Paste this into your terminal. It adds Vibedough to Claude Code and links it to your account with your code.</p>
+      <div class="term"><div class="bar"><span>terminal</span><button class="copy" type="button" data-copy="${esc(acct.install_command)}">Copy</button></div>
+        <div class="cmd"><span class="p">$ </span>${esc(acct.install_command).replace(esc(acct.install_code), `<span class="code">${esc(acct.install_code)}</span>`)}</div></div>
+      <ol class="how">
+        <li><div><b>Paste it in your terminal</b> and press Enter.</div></li>
+        <li><div><b>Start Claude Code</b> (or type <code>/reload-plugins</code> if it's already open).</div></li>
+        <li><div><b>That's it.</b> This page updates by itself when your install checks in.</div></li>
+      </ol>
+      <div class="waiting" role="status"><span class="pulse" aria-hidden="true"></span>Waiting for your install…</div>
+      <p class="small muted" style="margin-top:22px">Already have Vibedough in Claude Code? Type <span class="chip">/earn link ${esc(acct.install_code)} <button class="copy" type="button" data-copy="/earn link ${esc(acct.install_code)}">Copy</button></span> there instead. Needs Claude Code 2.1.275 or later (<code>claude update</code>).</p>
+    </div><div class="stack">${setupCard(true)}</div></div>`;
+    wire(main);
+    startPoll();
+  }
+
+  function startPoll() {
+    stopPoll();
+    let n = 0;
+    poll = setInterval(async () => {
+      if (document.hidden) return;
+      if (++n > 300) return stopPoll(); // ~20 minutes
+      const r = await VD.api("/account/me");
+      if (r.status === 200 && r.data.installed) { acct = r.data; stopPoll(); render(); }
+    }, 4000);
+  }
+  function stopPoll() { if (poll) clearInterval(poll); poll = null; }
+
+  // ------------------------------------------------------------ dashboard
+  function renderDashboard(host) {
+    host.innerHTML = `<div class="grid"><div class="stack">${earningsCard()}</div><div class="stack">${setupCard(false)}${codeCard()}</div></div>`;
+    wire(host);
+  }
+
+  function earningsCard() {
+    const e = acct.earnings;
+    const body = (x) => `<p class="small muted" style="margin:0">Your balance</p><div class="money">${money(x.balance_usd)}</div>
+      <p class="small muted" style="margin:0">Cash goes to PayPal once you reach ${money(x.min_payout_usd)}. Your share: ${num(x.share_pct)}% of what advertisers actually paid, settled monthly.</p>
+      <div class="kv"><div><b>${num(x.views_today)}</b><span>paid views today</span></div><div><b>${num(x.views_total)}</b><span>paid views all time</span></div>
+      <div><b>${x.est_pending_usd === null ? num(x.pending_views) : money(x.est_pending_usd)}</b><span>${x.est_pending_usd === null ? "views waiting to settle" : "est. waiting to settle"}</span></div><div><b>${money(x.paid_usd)}</b><span>paid out${x.donated_usd ? " · " + money(x.donated_usd) + " donated" : ""}</span></div></div>`;
+    if (e) return `<section class="card" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2>${body(e)}</section>`;
+    const fake = { balance_usd: 12.34, min_payout_usd: 10, share_pct: 50, views_today: 87, views_total: 4210, est_pending_usd: 3.21, pending_views: 900, paid_usd: 0, donated_usd: 0 };
+    return `<section class="card locked" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2><div class="blur" aria-hidden="true">${body(fake)}</div>
+      <div class="lock"><p><b>Add your PayPal email and W-9</b> to see your earnings. It takes about a minute, and it's how we pay you.</p></div></section>`;
+  }
+
+  function setupCard(installing) {
+    const w9 = acct.w9 && acct.w9.on_file;
+    const step = (done, title, val, inner) => `<li class="${done ? "done" : ""}"><div class="sh"><span class="tick" aria-hidden="true">✓</span><b>${title}</b><span class="val">${val}</span></div>${inner ? `<div class="sbody">${inner}</div>` : ""}</li>`;
+    const installVal = acct.installed ? `Checked in ${ago(acct.last_seen_at)}` : acct.installs ? "Linked, not seen lately" : "Not yet";
+    return `<section class="card" aria-labelledby="setup-h"><h2 id="setup-h">${installing ? "Then get paid" : "Payout setup"}</h2>
+      <p class="small muted" style="margin:0">${acct.payout_ready ? "You're all set to be paid." : "Two quick things so we can pay you."}</p>
+      <ul class="steps">
+        ${installing ? "" : step(acct.installed, "Installed", installVal, acct.installed ? "" : `<button class="linkbtn" type="button" data-go="install">Show the install line</button>`)}
+        ${step(!!acct.paypal_email, "PayPal email", acct.paypal_email ? esc(acct.paypal_email) : "", `<form class="pp" novalidate><div class="row" style="gap:8px;flex-direction:row"><input class="in" type="email" name="pp" autocomplete="email" placeholder="${acct.paypal_email ? "Change PayPal email" : "you@paypal.com"}" aria-label="PayPal email"><button class="btn" type="submit" style="flex:0 0 auto">Save</button></div><p class="msg" role="alert"></p></form>`)}
+        ${step(w9, "W-9 tax form", w9 ? `${acct.w9.tin_type.toUpperCase()} ending ${esc(acct.w9.tin_last4)}` : "", w9 ? `<button class="linkbtn" type="button" data-go="w9">Update it</button>` : `<p class="small muted" style="margin:0 0 10px">The IRS needs it before we can pay US earners. Stored encrypted; we only ever show the last 4 digits.</p><button class="btn ghost" type="button" data-go="w9">Fill out the W-9</button>`)}
+      </ul></section>`;
+  }
+
+  function codeCard() {
+    return `<section class="card" aria-labelledby="code-h"><h2 id="code-h">Your install code</h2>
+      <p style="margin:6px 0 10px"><span class="chip">${esc(acct.install_code)}</span></p>
+      <p class="small muted" style="margin:0 0 10px">Installing on another computer? Use <button class="linkbtn" type="button" data-copy="${esc(acct.install_command)}">the install line</button> there too. ${acct.installs ? `${num(acct.installs)} install${acct.installs === 1 ? "" : "s"} linked.` : ""}</p>
+      <button class="linkbtn small" type="button" data-go="rotate">Get a new code</button> <span class="small muted">(if someone else saw this one)</span></section>`;
+  }
+
+  function ago(iso) {
+    if (!iso) return "";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    return s < 120 ? "just now" : s < 7200 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " days ago";
+  }
+
+  // ------------------------------------------------------------ W-9
+  function renderW9() {
+    stopPoll();
+    main.innerHTML = `<div class="grid"><section class="card w9" aria-labelledby="w9-h">
+      <h2 id="w9-h">W-9: request for taxpayer ID</h2>
+      <p class="small muted">The same questions as IRS Form W-9. We use it only to report what we pay you (1099), and keep it encrypted.</p>
+      <form id="w9f" novalidate>
+        <label class="f" for="w-name">Name (as shown on your income tax return)</label><input class="in" id="w-name" name="legal_name" autocomplete="name" required>
+        <label class="f" for="w-biz">Business name, if different <span class="muted">(optional)</span></label><input class="in" id="w-biz" name="business_name" autocomplete="organization">
+        <label class="f" for="w-class">Federal tax classification</label><select class="in" id="w-class" name="tax_class">${CLASSES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+        <label class="f" for="w-addr">Address</label><input class="in" id="w-addr" name="line1" autocomplete="address-line1" placeholder="Street, apt or suite" required>
+        <div class="row"><div><label class="f" for="w-city">City</label><input class="in" id="w-city" name="city" autocomplete="address-level2" required></div>
+          <div><label class="f" for="w-state">State</label><select class="in" id="w-state" name="state" autocomplete="address-level1"><option value="">Choose</option>${STATES.map((s) => `<option>${s}</option>`).join("")}</select></div>
+          <div><label class="f" for="w-zip">ZIP</label><input class="in" id="w-zip" name="zip" autocomplete="postal-code" inputmode="numeric" required></div></div>
+        <fieldset><legend class="f" style="margin-top:14px">Taxpayer ID</legend>
+          <div class="radios"><label><input type="radio" name="tin_type" value="ssn" checked> SSN</label><label><input type="radio" name="tin_type" value="ein"> EIN</label></div></fieldset>
+        <label class="f" for="w-tin">Number</label><input class="in" id="w-tin" name="tin" inputmode="numeric" autocomplete="off" placeholder="123-45-6789" required style="font-family:'JetBrains Mono',monospace;letter-spacing:.06em">
+        <div class="cert">Under penalties of perjury, I certify that:<ol>
+          <li>The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and</li>
+          <li>I am not subject to backup withholding because (a) I am exempt from backup withholding, or (b) I have not been notified by the IRS that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and</li>
+          <li>I am a U.S. citizen or other U.S. person; and</li>
+          <li>The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</li></ol>
+          <p style="margin:8px 0 0">The IRS does not require your consent to any provision of this document other than the certifications required to avoid backup withholding.</p></div>
+        <label class="check"><input type="checkbox" name="certify"> <span>I certify the statements above are true.</span></label>
+        <label class="f" for="w-sig">Signature: type your full name</label><input class="in" id="w-sig" name="signature" autocomplete="name" required>
+        <p class="msg" role="alert" aria-live="polite"></p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px"><button class="btn" type="submit">Sign and save</button><button class="btn ghost" type="button" data-go="back">Cancel</button></div>
+        <p class="small muted" style="margin-top:14px">Not a U.S. person? Don't fill this out. Reply to your welcome email and we'll send a W-8BEN instead.</p>
+      </form></section><div></div></div>`;
+    const f = document.getElementById("w9f");
+    wire(main);
+    f.querySelector("#w-name").focus();
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const d = Object.fromEntries(new FormData(f));
+      d.certify = f.certify.checked;
+      const msg = f.querySelector(".msg"), btn = f.querySelector("button[type=submit]");
+      msg.className = "msg"; msg.textContent = "";
+      btn.disabled = true; btn.textContent = "Saving…";
+      const r = await VD.api("/account/w9", d).catch(() => ({ status: 0, data: {} }));
+      if (r.status === 200) { f.tin.value = ""; return load(); }
+      if (r.status === 401) return signedOutView("Your session expired. Sign in again; nothing was saved.");
+      msg.className = "msg err"; msg.textContent = r.data.error || "That didn't save. Try again.";
+      btn.disabled = false; btn.textContent = "Sign and save";
+    });
+  }
+
+  // ------------------------------------------------------------ mobile
+  function renderMobile() {
+    stopPoll();
+    main.innerHTML = `<div class="tabs" role="tablist"><button role="tab" data-tab="chat" aria-selected="${tab === "chat"}">Chat</button><button role="tab" data-tab="earn" aria-selected="${tab === "earn"}">Earnings</button></div><div id="pane"></div>`;
+    main.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderMobile(); });
+    const pane = document.getElementById("pane");
+    if (tab === "earn") {
+      const tip = acct.installed ? "" : `<div class="notice" style="margin-bottom:16px">Earn more on your computer: we emailed you a one-line install for Claude Code. Your code is <b>${esc(acct.install_code)}</b>.</div>`;
+      pane.innerHTML = tip + `<div id="dash"></div>`;
+      return renderDashboard(document.getElementById("dash"));
+    }
+    renderChat(pane);
+  }
+
+  const chatLog = (() => { try { return JSON.parse(sessionStorage.getItem("vd_chat") || "[]"); } catch (_) { return []; } })();
+  const saveChat = () => { try { sessionStorage.setItem("vd_chat", JSON.stringify(chatLog.slice(-30))); } catch (_) {} };
+  // Minimal formatting: fenced code blocks, everything else as text.
+  const fmt = (t) => esc(t).replace(/```[a-z0-9]*\n?([\s\S]*?)```/gi, "<pre>$1</pre>");
+
+  function renderChat(pane) {
+    pane.innerHTML = `<div class="chat"><div class="log" id="log" aria-live="polite"></div>
+      <form class="compose" id="compose"><textarea id="q" rows="1" placeholder="Ask anything…" aria-label="Message"></textarea><button type="submit" aria-label="Send">↑</button></form></div>`;
+    const log = document.getElementById("log"), form = document.getElementById("compose"), q = document.getElementById("q");
+    if (!chatLog.length) log.innerHTML = `<div class="notice">Chat about code, side projects, anything. While it thinks you'll see one sponsored line, and half of what it earns is yours.</div>`;
+    for (const m of chatLog) log.insertAdjacentHTML("beforeend", `<div class="bubble ${m.role === "user" ? "me" : "ai"}">${m.role === "user" ? esc(m.content) : fmt(m.content)}</div>`);
+    log.scrollTop = log.scrollHeight;
+    q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 140) + "px"; });
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !mobile) { e.preventDefault(); form.requestSubmit(); } });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = q.value.trim();
+      if (!text) return;
+      q.value = ""; q.style.height = "auto";
+      log.querySelector(".notice")?.remove();
+      chatLog.push({ role: "user", content: text }); saveChat();
+      log.insertAdjacentHTML("beforeend", `<div class="bubble me">${esc(text)}</div><div class="thinking"><span class="pulse"></span>Thinking…</div>`);
+      log.scrollTop = log.scrollHeight;
+      const thinking = log.querySelector(".thinking:last-of-type");
+      // The sponsored line and the reply are fetched together; the line shows while the reply is on its way.
+      VD.api("/account/ad", { query: text.slice(0, 500) }).then((r) => {
+        if (r.status !== 200 || !r.data.ad) return;
+        const a = r.data.ad;
+        const el = document.createElement("a");
+        el.className = "sponsor"; el.href = a.clickUrl; el.target = "_blank"; el.rel = "sponsored noopener";
+        el.innerHTML = `<span class="tag">${esc(a.label || "Sponsored")}</span><b>${esc(a.brand)}</b><span>${esc(a.headline)}</span><span class="cta">${esc(a.cta || "Learn more")} →</span>`;
+        thinking.after(el);
+        log.scrollTop = log.scrollHeight;
+        // A view counts after a full second on screen, with the page in front.
+        setTimeout(() => { if (!document.hidden && el.isConnected) fetch(VD.API + "/event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: r.data.id, type: "impression" }), keepalive: true }).catch(() => {}); }, 1100);
+      }).catch(() => {});
+      const r = await VD.api("/account/chat", { messages: chatLog.slice(-20) }).catch(() => ({ status: 0, data: {} }));
+      thinking.remove();
+      if (r.status === 200 && r.data.reply) {
+        chatLog.push({ role: "assistant", content: r.data.reply }); saveChat();
+        log.insertAdjacentHTML("beforeend", `<div class="bubble ai">${fmt(r.data.reply)}</div>`);
+      } else {
+        if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
+        chatLog.pop(); saveChat();
+        log.insertAdjacentHTML("beforeend", `<div class="notice">${esc(r.data.error || "Couldn't reach us. Check your connection and try again.")}</div>`);
+      }
+      log.scrollTop = log.scrollHeight;
+    });
+  }
+
+  // ------------------------------------------------------------ shared wiring
+  function wire(host) {
+    host.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (_) { const t = document.createElement("textarea"); t.value = b.dataset.copy; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+      if (b.classList.contains("copy")) { const was = b.textContent; b.textContent = "Copied"; b.classList.add("done"); setTimeout(() => { b.textContent = was; b.classList.remove("done"); }, 1600); }
+    }));
+    host.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", async () => {
+      const go = b.dataset.go;
+      if (go === "w9") return renderW9();
+      if (go === "back") return load();
+      if (go === "install") return renderInstall();
+      if (go === "rotate") {
+        if (!confirm("Get a new install code? The old one stops working for new installs. Installs already linked stay linked.")) return;
+        const r = await VD.api("/account/code", {});
+        if (r.status === 200) load();
+      }
+    }));
+    host.querySelectorAll("form.pp").forEach((f) => f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = f.querySelector("input"), msg = f.querySelector(".msg");
+      msg.className = "msg"; msg.textContent = "";
+      if (!input.checkValidity() || !input.value.trim()) { msg.className = "msg err"; msg.textContent = "Enter the email your PayPal account uses."; return; }
+      const r = await VD.api("/account/paypal", { email: input.value.trim() });
+      if (r.status === 200) return load();
+      msg.className = "msg err"; msg.textContent = r.data.error || "That didn't save. Try again.";
+    }));
+  }
+
+  document.getElementById("signout").addEventListener("click", () => { VD.signOut(); try { sessionStorage.removeItem("vd_chat"); } catch (_) {} signedOutView(); });
+  // Back from a tab: refresh, so an install that checked in meanwhile shows up.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && acct && !acct.installed && !mobile) load(); });
+
+  (async () => {
+    const done = await VD.finishFromUrl();
+    if (done && done.error) return signedOutView(done.error);
+    if (!(await VD.session())) return signedOutView();
+    load();
+  })();
+})();
+</script>
+</body>
+</html>

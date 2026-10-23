@@ -20,26 +20,12 @@ a{color:var(--cobalt);font-weight:600}
 </head>
 <body>
 <main id="m" aria-live="polite">
-  <h1>Confirming your account…</h1>
+  <h1>Taking you to your account…</h1>
+  <p><a href="/app">Continue</a></p>
 </main>
 <script>
-(() => {
-  const h = new URLSearchParams(location.hash.slice(1));
-  const q = new URLSearchParams(location.search);
-  const m = document.getElementById("m");
-  const err = h.get("error_description") || q.get("error_description");
-  // Never leave tokens sitting in the address bar or history.
-  history.replaceState(null, "", location.pathname);
-  if (err) {
-    m.className = "err";
-    m.innerHTML = "<h1>That link didn't work.</h1><p></p><p>Links expire after a while and work once. Sign up again from the page you came from and we'll send a fresh one.</p>";
-    m.querySelector("p").textContent = err.replace(/\+/g, " ") + ".";
-  } else if (h.get("access_token") || h.get("type") === "signup") {
-    m.innerHTML = "<h1>You're in.</h1><p>Your Vibedough account is confirmed. We'll email you the one-line install for Claude Code as soon as it opens.</p>";
-  } else {
-    m.innerHTML = "<h1>Nothing to confirm here.</h1><p>Open the link from the email we sent you to confirm your account.</p>";
-  }
-})();
+// Old confirmation links land here; /app finishes any sign-in in the URL and takes it from there.
+location.replace("/app" + location.search + location.hash);
 </script>
 </body>
 </html>
