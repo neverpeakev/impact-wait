@@ -17,9 +17,9 @@ const keys: Keys = { ...fromEnv };
 let resendKey = env("RESEND_API_KEY") || "";
 // Claude key for the web chat: secret ANTHROPIC_API_KEY, else Vault impact_wait_anthropic_key. Unset = chat answers 503.
 let anthropicKey = env("ANTHROPIC_API_KEY") || "";
-// The chat runs on Claude Haiku 5.5 only (chat.ts CHAT_MODEL), and stops for the month at
-// GOODWAIT_CHAT_MONTHLY_CAP_USD (default $200) of model spend (app.ts).
-const CHAT_CAP_USD = Number(env("GOODWAIT_CHAT_MONTHLY_CAP_USD")) || 200;
+// The chat runs on Claude Haiku 5.5 only (chat.ts CHAT_MODEL), and stops for the month at $200 of
+// model spend (Kevin, 10-23; app.ts). GOODWAIT_CHAT_MONTHLY_CAP_USD can lower the cap, never raise it.
+const CHAT_CAP_USD = Math.min(200, Number(env("GOODWAIT_CHAT_MONTHLY_CAP_USD")) || 200);
 
 async function refreshKeys() {
   try {
