@@ -228,6 +228,11 @@ Deno.test("accounts off: routes answer 503 when no Auth is wired", async () => {
   assertEquals(r.status, 503);
 });
 
+Deno.test("web chat: the account page says whether the chat is open (ads only run while it is)", async () => {
+  assertEquals((await (await mk().as("ana", "/account/me")).json()).chat_open, false);
+  assertEquals((await (await mk({ chat: true }).as("ana", "/account/me")).json()).chat_open, true);
+});
+
 Deno.test("web chat: 503 until a model is wired, then replies; capped per account per day", async () => {
   assertEquals((await mk().as("ana", "/account/chat", { messages: [{ role: "user", content: "hi" }] })).status, 503);
   const t = mk({ chat: true, chatPerDay: 2 });

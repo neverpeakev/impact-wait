@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createApp, type Keys } from "./app.ts";
 import type { AuthApi, AuthUser, Mailer } from "./accounts.ts";
 import type { ChatFn } from "./chat.ts";
+import { KIMI_DEFAULT_MODEL } from "./kimi.ts";
 import { loadVaultKeys, pgStore } from "./pgstore.ts";
 
 // Network keys: Edge Function secrets (Supabase dashboard -> Edge Functions -> Secrets) win;
@@ -15,11 +16,14 @@ const fromEnv: Keys = { idlen: env2("IDLEN_KEY"), admesh: env2("ADMESH_KEY"), ag
 const keys: Keys = { ...fromEnv };
 // Resend key for the API's own email (sign-in links, welcome): secret RESEND_API_KEY, else Vault impact_wait_resend_key.
 let resendKey = env("RESEND_API_KEY") || "";
-// Claude key for the web chat: secret ANTHROPIC_API_KEY, else Vault impact_wait_anthropic_key. Unset = chat answers 503.
+// Web chat model keys. Kevin (10-23): Kimi is the default. With a Moonshot key (secret MOONSHOT_API_KEY,
+// else Vault impact_wait_moonshot_key) the chat runs on Kimi; with only a Claude key (ANTHROPIC_API_KEY,
+// else Vault impact_wait_anthropic_key) it runs on Claude; with neither it answers 503.
+let moonshotKey = env("MOONSHOT_API_KEY") || "";
 let anthropicKey = env("ANTHROPIC_API_KEY") || "";
-// Kevin's pick (10-23): Haiku 5.5. A chat message costs well under the sponsored line it earns;
-// GOODWAIT_CHAT_MODEL overrides.
-const CHAT_MODEL = env("GOODWAIT_CHAT_MODEL") || "claude-haiku-5-5";
+// GOODWAIT_KIMI_MODEL / GOODWAIT_CHAT_MODEL override the models (e.g. a newer Kimi the day it ships).
+const KIMI_MODEL = env("GOODWAIT_KIMI_MODEL") || KIMI_DEFAULT_MODEL;
+const CLAUDE_MODEL = env("GOODWAIT_CHAT_MODEL") || "claude-haiku-5-5";
 
 async function refreshKeys() {
   try {
@@ -27,6 +31,7 @@ async function refreshKeys() {
     for (const n of ["idlen", "admesh", "agentads"] as const) keys[n] = fromEnv[n] || v[n] || undefined;
     resendKey = env("RESEND_API_KEY") || v.resend || "";
     anthropicKey = env("ANTHROPIC_API_KEY") || v.anthropic || "";
+    moonshotKey = env("MOONSHOT_API_KEY") || v.moonshot || "";
   } catch (e) {
     console.log(`vault keys not loaded: ${(e as Error).message}`);
   }
@@ -81,12 +86,18 @@ const mailer: Mailer = async (m) => {
   return r.ok;
 };
 
-// The chat module (and the Anthropic SDK) loads on the first chat message, not at cold start.
+// The chat module (and, on the Claude path, the Anthropic SDK) loads on the first chat message, not at cold start.
 let chatImpl: { key: string; fn: ChatFn } | null = null;
 const chat: ChatFn = async (turns) => {
-  if (!chatImpl || chatImpl.key !== anthropicKey) {
-    const { claudeChat } = await import("./chat.ts");
-    chatImpl = { key: anthropicKey, fn: claudeChat(anthropicKey, CHAT_MODEL) };
+  const key = moonshotKey ? `kimi:${moonshotKey}` : `claude:${anthropicKey}`;
+  if (!chatImpl || chatImpl.key !== key) {
+    if (moonshotKey) {
+      const { kimiChat } = await import("./kimi.ts");
+      chatImpl = { key, fn: kimiChat(moonshotKey, KIMI_MODEL) };
+    } else {
+      const { claudeChat } = await import("./chat.ts");
+      chatImpl = { key, fn: claudeChat(anthropicKey, CLAUDE_MODEL) };
+    }
   }
   return chatImpl.fn(turns);
 };
@@ -100,7 +111,7 @@ const app = createApp({
   auth: SERVICE ? auth : undefined,
   mailer,
   chat,
-  chatEnabled: () => !!anthropicKey,
+  chatEnabled: () => !!(moonshotKey || anthropicKey),
   // www is the canonical host (the apex redirects there), so sign-in links skip a hop.
   appUrl: env("GOODWAIT_APP_URL") || "https://www.vibedough.com/app",
 });

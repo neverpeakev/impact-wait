@@ -148,14 +148,11 @@ export function house(ctx: Ctx): Ad {
   return { provider: "house", live: false, label: "Sponsored", brand: h.brand, headline: h.headline, body: h.body, cta: h.cta, clickUrl: h.url, tracking: { houseId: h.id } };
 }
 
-// ---------------------------------------------------------- Brand safety
-// Kevin (2026-09-28): serve every paying network ad; the house ads are last resort only.
-// The one hard line: sensitive categories (gambling, adult, drugs, weapons...) never show.
-const SENSITIVE = /\b(casino|gambl\w*|betting|sportsbook|poker|slot machines?|lottery|payday loans?|adult|xxx|porn\w*|onlyfans|escort|hookup|sugar daddy|diet pills?|fat burn\w*|cbd|thc|cannabis|marijuana|hemp|edibles?|delta[- ]?[89]|kratom|psilocybin|vape|vaping|e-?cig\w*|tobacco|nicotine|firearms?|guns?|ammo|ammunition|fake id)\b/i;
-
+// ------------------------------------------------------------ Ad checks
+// Kevin (2026-10-23): no brand-safety rules; every paying network ad serves, whatever the category.
+// The only check is technical: the ad needs an https landing page.
 export function safetyReason(ad: Ad): string | null {
   if (!ad.clickUrl) return "no https landing page";
-  if (SENSITIVE.test([ad.brand, ad.headline, ad.body, ad.cta].join(" ")) || SENSITIVE.test(ad.clickUrl)) return "sensitive category";
   return null;
 }
 

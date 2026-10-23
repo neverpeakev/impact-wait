@@ -1,5 +1,5 @@
 // Goodwait API. Routes (all under /functions/v1/goodwait):
-//   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact}
+//   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact} (ad null for earners when nothing paying fills)
 //   POST /event   {id, type:"impression"}               -> {ok}
 //   GET  /click?id=...                                   -> 302 to the advertiser
 //   GET  /stats?site=...                                 -> public counter + leaderboard (+ actual earnings for the site)
@@ -152,6 +152,8 @@ function sessionToken(req: Request): string {
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
   return m && m[1].length < 8192 && JWT_RE.test(m[1]) ? m[1] : "";
 }
+// The Claude Code plugin's site key (its users are all earners).
+const PLUGIN_SITE = "claude-code";
 // The site key for views in the Vibedough web chat.
 const WEB_SITE = "vibedough-app";
 const SIGNIN_PER_EMAIL_HOUR = 5;
@@ -196,13 +198,20 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
   const minMs = opts.minImpressionMs ?? 900;
   const rate = opts.rateLimitPerMin ?? 30;
   const log = opts.log || (() => {});
+  const chatOpen = () => !!opts.chat && (!opts.chatEnabled || opts.chatEnabled());
 
   // One sponsored line: the network chain, then the ad row (credited later, at its impression).
-  async function serveAd(o: { site: string; query: string; response: string; sessionId: string; origin: string; ipHash: string; earnerId: string | null; sandbox: boolean; debug?: boolean }) {
+  // paidOnly: people who are told they earn from views (earners, the Claude Code plugin) never get a
+  // house ad; with no paying fill the answer is {ad: null} and nothing shows.
+  async function serveAd(o: { site: string; query: string; response: string; sessionId: string; origin: string; ipHash: string; earnerId: string | null; sandbox: boolean; paidOnly: boolean; debug?: boolean }) {
     let host = "chat.example";
     try { if (o.origin) host = new URL(o.origin).host || host; } catch (_) { /* keep default */ }
     const ctx = { query: o.query, response: o.response, sessionId: o.sessionId, host };
     const { ad, attempts } = await runChain(ctx, o.sandbox ? {} : keys, f);
+    if (o.paidOnly && !o.sandbox && !ad.live) {
+      log(`ad site=${o.site} no paid fill (no house ad for earners) ${attempts.map((a: Attempt) => `${a.provider}:${a.result}`).join(" ")}`);
+      return { id: null, ad: null, attempts: o.debug ? attempts : undefined };
+    }
     const id = await store.insertAd({ site_key: o.sandbox ? SANDBOX_SITE : o.site, provider: ad.provider, live: ad.live, tracking: ad.tracking, click_url: ad.clickUrl, ip_hash: o.ipHash, origin: o.origin, earner_id: o.earnerId });
     const st = await store.stats(null);
     log(`ad site=${o.site}${o.sandbox ? " (sandbox)" : ""} provider=${ad.provider} ${attempts.map((a: Attempt) => `${a.provider}:${a.result}${a.note ? "(" + a.note + ")" : ""}`).join(" ")}`);
@@ -271,6 +280,8 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       payout_ready: payoutReady, earnings_locked: gated, earnings,
       // An opaque id the web chat passes to ad networks as the publisher's user id (never the email).
       ad_user_id: await sha(`ad-user|${account.id}|${salt}`),
+      // The web chat only asks for ads while it can answer: no sponsored line on a message that gets no reply.
+      chat_open: chatOpen(),
     };
   }
 
@@ -306,7 +317,8 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           if (e && e.status === "active") earnerId = e.id;
         }
         if (earnerId) await store.touchEarner(earnerId);
-        return json(await serveAd({ site, query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox, debug: !!b.debug }));
+        const paidOnly = typeof b.earner === "string" || site === PLUGIN_SITE;
+        return json(await serveAd({ site, query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox, paidOnly, debug: !!b.debug }));
       }
 
       if (route === "/event" && req.method === "POST") {
@@ -550,7 +562,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       if (route === "/account/chat" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
-        if (!opts.chat || (opts.chatEnabled && !opts.chatEnabled())) return json({ error: "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        if (!opts.chat || !chatOpen()) return json({ error: "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
         const b = await req.json().catch(() => ({}));
         const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
         const turns: ChatTurn[] = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
