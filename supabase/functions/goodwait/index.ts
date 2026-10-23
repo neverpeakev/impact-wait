@@ -17,7 +17,9 @@ const keys: Keys = { ...fromEnv };
 let resendKey = env("RESEND_API_KEY") || "";
 // Claude key for the web chat: secret ANTHROPIC_API_KEY, else Vault impact_wait_anthropic_key. Unset = chat answers 503.
 let anthropicKey = env("ANTHROPIC_API_KEY") || "";
-const CHAT_MODEL = env("GOODWAIT_CHAT_MODEL") || "claude-opus-5-5";
+// Kevin's pick (10-23): Haiku 5.5. A chat message costs well under the sponsored line it earns;
+// GOODWAIT_CHAT_MODEL overrides.
+const CHAT_MODEL = env("GOODWAIT_CHAT_MODEL") || "claude-haiku-5-5";
 
 async function refreshKeys() {
   try {
@@ -99,7 +101,8 @@ const app = createApp({
   mailer,
   chat,
   chatEnabled: () => !!anthropicKey,
-  appUrl: env("GOODWAIT_APP_URL") || "https://vibedough.com/app",
+  // www is the canonical host (the apex redirects there), so sign-in links skip a hop.
+  appUrl: env("GOODWAIT_APP_URL") || "https://www.vibedough.com/app",
 });
 
 Deno.serve(app);
