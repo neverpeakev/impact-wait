@@ -243,3 +243,11 @@ Deno.test("brand safety: a sensitive Idlen fill loses to AdMesh, and alone falls
   const j3 = await (await ask({ idlen: "idl_pk_x", admesh: "sk_x" }, "7.7.7.7")).json();
   assertEquals(j3.ad.provider, "idlen");
 });
+
+Deno.test("brand safety: hemp, edibles and delta-8 are a sensitive category too", async () => {
+  const { safetyReason } = await import("../supabase/functions/goodwait/networks.ts");
+  const base = { provider: "velocity", live: true, label: "Sponsored", brand: "Hi-Snaps", headline: "Hi-Snaps premium hemp edibles", body: "", cta: "Learn More", clickUrl: "https://example.com/", tracking: {} };
+  assertEquals(safetyReason(base), "sensitive category");
+  assertEquals(safetyReason({ ...base, brand: "X", headline: "Delta-8 gummies" }), "sensitive category");
+  assertEquals(safetyReason({ ...base, brand: "Tempo", headline: "Tempo meal delivery" }), null);
+});

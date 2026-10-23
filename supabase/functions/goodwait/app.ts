@@ -20,7 +20,8 @@
 //   POST /account/w9      {legal_name, ..., tin, certify, signature} -> {ok, tin_last4}
 //   POST /account/code    {}                             -> a fresh install code (the old one stops working)
 //   POST /earner/link     {code} + earner Bearer         -> joins this install to the account that owns the code
-//   POST /account/ad      {query}                        -> a sponsored line for the web chat, credited to the account
+//   POST /account/impression {network, request_id, ad_id?} -> {ok, counted, credited}: a view of an ad the web
+//        chat fetched from Velocity in the browser (after firing Velocity's impression URL), credited to the account
 //   POST /account/chat    {messages: [{role, content}]}  -> {reply} (503 until a model key is set)
 // Referrals: POST /earner takes {invite: "<code>"}; the referrer earns 10% of the friend's share,
 // paid out of the house half at settlement (see settle()). Never multi-level.
@@ -208,6 +209,21 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
     return { id, ad: publicAd(ad, `${baseUrl}/click?id=${id}`), impact: impactSummary(st.impact, st.total.sponsored_waits), sandbox: o.sandbox || undefined, attempts: o.debug ? attempts : undefined };
   }
 
+  // Counts (once per network request id) a view the client already reported to the network, and credits it.
+  async function recordExternal(o: { site: string; network: string; requestId: string; adId: unknown; ipHash: string; origin: string; earnerId: string | null }) {
+    const adId = typeof o.adId === "string" ? o.adId.slice(0, 128) : null;
+    const id = await store.insertExternalImpression({ site_key: o.site, provider: o.network, tracking: { requestId: o.requestId, adId, clientReported: true }, ip_hash: o.ipHash, origin: o.origin, earner_id: o.earnerId });
+    if (!id) return { ok: true, counted: false, duplicate: true };
+    await store.finishImpression(id, o.site, 200, true);
+    let credited = false;
+    if (o.earnerId) {
+      const p = await store.program();
+      credited = await store.creditImpression(id, o.earnerId, p.daily_cap, p.min_gap_seconds);
+    }
+    log(`impression site=${o.site} provider=${o.network} client-reported${o.earnerId ? ` earner credited=${credited}` : ""}`);
+    return { ok: true, counted: true, credited };
+  }
+
   // The signed-in person's account, created on first sight. Sends the welcome email exactly once.
   async function signedIn(req: Request): Promise<{ account: Account } | Response> {
     if (!opts.auth) return json({ error: "accounts are not set up" }, 503);
@@ -253,6 +269,8 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       installs: plugins.length, installed: lastSeen > fresh, last_seen_at: lastSeen ? new Date(lastSeen).toISOString() : null,
       paypal_email: maskEmail(account.paypal_email), w9: tax ? { on_file: true, tin_type: tax.tin_type, tin_last4: tax.tin_last4, signed_at: tax.signed_at } : { on_file: false },
       payout_ready: payoutReady, earnings_locked: gated, earnings,
+      // An opaque id the web chat passes to ad networks as the publisher's user id (never the email).
+      ad_user_id: await sha(`ad-user|${account.id}|${salt}`),
     };
   }
 
@@ -328,17 +346,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           if (e && e.status === "active") earnerId = e.id;
         }
         if (earnerId) await store.touchEarner(earnerId);
-        const adId = typeof b.ad_id === "string" ? b.ad_id.slice(0, 128) : null;
-        const id = await store.insertExternalImpression({ site_key: site, provider: network, tracking: { requestId, adId, clientReported: true }, ip_hash: ipHash, origin, earner_id: earnerId });
-        if (!id) return json({ ok: true, counted: false, duplicate: true });
-        await store.finishImpression(id, site, 200, true);
-        let credited = false;
-        if (earnerId) {
-          const p = await store.program();
-          credited = await store.creditImpression(id, earnerId, p.daily_cap, p.min_gap_seconds);
-        }
-        log(`impression site=${site} provider=${network} client-reported${earnerId ? ` earner credited=${credited}` : ""}`);
-        return json({ ok: true, counted: true, credited });
+        return json(await recordExternal({ site, network, requestId, adId: b.ad_id, ipHash, origin, earnerId }));
       }
 
       if (route === "/click" && req.method === "GET") {
@@ -525,17 +533,18 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         return json({ ok: true, tin_type: r.form.tin_type, tin_last4: last4 });
       }
 
-      if (route === "/account/ad" && req.method === "POST") {
+      if (route === "/account/impression" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
         const b = await req.json().catch(() => ({}));
-        const query = String(b.query || "").slice(0, 500).trim();
-        if (!query) return json({ error: "query required" }, 400);
+        const network = String(b.network || "");
+        const requestId = String(b.request_id || "");
+        if (!EXTERNAL_NETWORKS.has(network) || !REQUEST_ID_RE.test(requestId)) return json({ error: "bad impression" }, 400);
+        if (isDevOrigin(origin, WEB_SITE)) return json({ ok: true, counted: false, sandbox: true });
+        if (!(await store.ensureSite(WEB_SITE, origin))) return json({ error: "site disabled" }, 403);
         if ((await store.recentAds(ipHash, 60)) >= rate) return json({ error: "rate limited" }, 429, { "Retry-After": "30" });
-        const sandbox = isDevOrigin(origin, WEB_SITE);
-        if (!sandbox && !(await store.ensureSite(WEB_SITE, origin))) return json({ error: "site disabled" }, 403);
-        const earnerId = sandbox ? null : await store.webEarner(s.account.id, ipHash);
-        return json(await serveAd({ site: WEB_SITE, query, response: "", sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox }));
+        const earnerId = await store.webEarner(s.account.id, ipHash);
+        return json(await recordExternal({ site: WEB_SITE, network, requestId, adId: b.ad_id, ipHash, origin, earnerId }));
       }
 
       if (route === "/account/chat" && req.method === "POST") {

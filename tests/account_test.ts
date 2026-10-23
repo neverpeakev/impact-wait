@@ -240,26 +240,27 @@ Deno.test("web chat: 503 until a model is wired, then replies; capped per accoun
   assertEquals((await t.as("ana", "/account/chat", { messages: [{ role: "user", content: "third" }] })).status, 429);
 });
 
-Deno.test("web chat ad: credited to the account's own web earner, which is not an install", async () => {
+Deno.test("web chat views: credited to the account's own web earner, which is not an install", async () => {
   const t = mk();
   const { install_code } = await (await t.as("ana", "/account/me")).json();
-  const r = await (await t.as("ana", "/account/ad", { query: "best postgres host" })).json();
-  assert(r.id && r.ad && r.ad.sponsored);
-  const row = t.store.ads.get(r.id)!;
-  const web = t.store.earners.get(row.earner_id as string);
-  assertEquals(web.ref, "web-app");
-  assertEquals(web.account_id, [...t.store.accounts.values()][0].id);
-  const r2 = await (await t.as("ana", "/account/ad", { query: "another" })).json();
-  assertEquals(t.store.ads.get(r2.id)!.earner_id, row.earner_id, "one web earner per account");
+  const view = (who: string, rid: string) => t.as(who, "/account/impression", { network: "velocity", request_id: rid });
+  await view("ana", "aaaaaaaa-0000-0000-0000-000000000001");
+  await view("ana", "aaaaaaaa-0000-0000-0000-000000000002");
+  const rows = [...t.store.ads.values()].filter((a) => a.provider === "velocity");
+  assertEquals(rows.length, 2);
+  assertEquals(rows[0].earner_id, rows[1].earner_id, "one web earner per account");
+  assertEquals(t.store.earners.get(rows[0].earner_id as string).ref, "web-app");
   const j = await (await t.as("ana", "/account/me")).json();
   assertEquals(j.installs, 0, "the web earner is not an install");
   assertEquals(j.installed, false);
   // It doesn't use up an install slot either.
   const t2 = mk({ program: { max_installs_per_account: 1 } });
   const { install_code: c2 } = await (await t2.as("bo", "/account/me")).json();
-  await t2.as("bo", "/account/ad", { query: "x" });
+  await t2.as("bo", "/account/impression", { network: "velocity", request_id: "bbbbbbbb-0000-0000-0000-000000000001" });
   assertEquals((await t2.link(await t2.earner(), c2)).status, 200);
   assert(install_code);
+  // The web app never gets a house ad: that route is gone.
+  assertEquals((await t.as("ana", "/account/ad", { query: "x" })).status, 404);
 });
 
 Deno.test("welcome email: a failed send is retried on the next visit, then never again", async () => {
@@ -268,4 +269,30 @@ Deno.test("welcome email: a failed send is retried on the next visit, then never
   await t.as("ana", "/account/me");
   assertEquals(t.mail.filter((m) => m.tag === "welcome").length, 2, "retried after the failure");
   assertEquals([...t.store.accounts.values()][0].welcome_sent_at, null);
+});
+
+Deno.test("web chat Velocity view: counted once per request id and credited to the account's web earner", async () => {
+  const t = mk();
+  const view = (who: string, body: unknown, headers: Record<string, string> = {}) =>
+    t.call("/account/impression", { method: "POST", body: JSON.stringify(body), headers: { authorization: `Bearer ${jwt(who)}`, ...headers } });
+  const ok = { network: "velocity", request_id: "6a9e9ccd-f98f-467e-8992-e91680f8a249", ad_id: "f63945d0c0ae-0" };
+  assertEquals((await t.call("/account/impression", { method: "POST", body: JSON.stringify(ok) })).status, 401, "needs a session");
+  assertEquals((await view("ana", { ...ok, network: "idlen" })).status, 400, "only client-fetched networks");
+  assertEquals((await view("ana", { ...ok, request_id: "x" })).status, 400);
+  const r = await (await view("ana", ok)).json();
+  assertEquals(r, { ok: true, counted: true, credited: true });
+  const row = [...t.store.ads.values()].find((a) => a.provider === "velocity")!;
+  assertEquals(row.site_key, "vibedough-app");
+  assertEquals(row.tracking.requestId, ok.request_id);
+  const web = t.store.earners.get(row.earner_id as string);
+  assertEquals(web.ref, "web-app");
+  assertEquals(web.account_id, [...t.store.accounts.values()][0].id);
+  assertEquals((await (await view("ana", ok)).json()).duplicate, true, "the same request id never counts twice");
+  // Local development counts nothing.
+  const dev = await (await view("bo", { ...ok, request_id: "11111111-2222-3333-4444-555555555555" }, { origin: "http://localhost:8000" })).json();
+  assertEquals(dev.sandbox, true);
+  // The account page hands the web chat an opaque id for the network, never the email.
+  const me = await (await t.as("ana", "/account/me")).json();
+  assertMatch(me.ad_user_id, /^[0-9a-f]{32}$/);
+  assert(!me.ad_user_id.includes("ana"));
 });
