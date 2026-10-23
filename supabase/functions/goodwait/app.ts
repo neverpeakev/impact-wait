@@ -98,6 +98,9 @@ export interface Store {
   webEarner(accountId: string, ipHash: string): Promise<string>;
   // Marks an install as alive (throttled in the store). Drives "installed" on the account page.
   touchEarner(earnerId: string): Promise<void>;
+  // Web chat model spend (USD) since a moment, and one reply's usage.
+  chatSpendSince(since: Date): Promise<number>;
+  recordChatUsage(row: { account_id: string; model: string; input_tokens: number; output_tokens: number; cache_write_tokens: number; cache_read_tokens: number; cost_usd: number }): Promise<void>;
   rateCount(kind: string, key: string, seconds: number): Promise<number>;
   rateHit(kind: string, key: string): Promise<void>;
   stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact; earnings?: Earning[] }>;
@@ -188,7 +191,7 @@ export function impactSummary(impact: Impact, totalWaits: number) {
 }
 
 export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; salt: string; fetch?: typeof fetch; minImpressionMs?: number; rateLimitPerMin?: number; log?: (m: string) => void;
-  auth?: AuthApi; mailer?: Mailer; appUrl?: string; chat?: ChatFn; chatEnabled?: () => boolean; chatPerDay?: number }) {
+  auth?: AuthApi; mailer?: Mailer; appUrl?: string; chat?: ChatFn; chatEnabled?: () => boolean; chatPerDay?: number; chatMonthlyCapUsd?: number }) {
   const { store, keys, baseUrl, salt } = opts;
   const appUrl = opts.appUrl || "https://vibedough.com/app";
   const mailer: Mailer = opts.mailer || (async () => false);
@@ -198,7 +201,16 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
   const minMs = opts.minImpressionMs ?? 900;
   const rate = opts.rateLimitPerMin ?? 30;
   const log = opts.log || (() => {});
-  const chatOpen = () => !!opts.chat && (!opts.chatEnabled || opts.chatEnabled());
+  // The chat stops for the rest of the calendar month (UTC) once its model spend reaches the cap.
+  const chatCap = opts.chatMonthlyCapUsd ?? 200;
+  let spend = { at: 0, month: "", usd: 0 };
+  const monthStart = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); };
+  async function chatSpend(fresh = false) {
+    const m = monthStart().toISOString();
+    if (fresh || spend.month !== m || Date.now() - spend.at > 60_000) spend = { at: Date.now(), month: m, usd: await store.chatSpendSince(monthStart()) };
+    return spend.usd;
+  }
+  const chatOpen = async () => !!opts.chat && (!opts.chatEnabled || opts.chatEnabled()) && (await chatSpend()) < chatCap;
 
   // One sponsored line: the network chain, then the ad row (credited later, at its impression).
   // paidOnly: people who are told they earn from views (earners, the Claude Code plugin) never get a
@@ -281,7 +293,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       // An opaque id the web chat passes to ad networks as the publisher's user id (never the email).
       ad_user_id: await sha(`ad-user|${account.id}|${salt}`),
       // The web chat only asks for ads while it can answer: no sponsored line on a message that gets no reply.
-      chat_open: chatOpen(),
+      chat_open: await chatOpen(),
     };
   }
 
@@ -562,7 +574,10 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       if (route === "/account/chat" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
-        if (!opts.chat || !chatOpen()) return json({ error: "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        if (!opts.chat || !(await chatOpen())) {
+          const capped = !!opts.chat && (!opts.chatEnabled || opts.chatEnabled());
+          return json({ error: capped ? "Chat is paused until the 1st. Your earnings and installs keep working." : "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        }
         const b = await req.json().catch(() => ({}));
         const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
         const turns: ChatTurn[] = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
@@ -571,7 +586,13 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (!turns.length || turns[turns.length - 1].role !== "user") return json({ error: "send a message" }, 400);
         if ((await store.rateCount("chat", s.account.id, 86400)) >= chatPerDay) return json({ error: `That's today's ${chatPerDay} messages. More tomorrow.` }, 429);
         await store.rateHit("chat", s.account.id);
+        // Re-check against the database (not the 60s cache) right before spending.
+        if ((await chatSpend(true)) >= chatCap) { log(`chat paused: month spend reached $${chatCap}`); return json({ error: "Chat is paused until the 1st. Your earnings and installs keep working." }, 503); }
         const r = await opts.chat(turns);
+        if (r.usage) {
+          await store.recordChatUsage({ account_id: s.account.id, ...r.usage }).catch((e) => log(`chat usage not recorded: ${(e as Error).message}`));
+          spend.usd += r.usage.cost_usd;
+        }
         if ("refused" in r) return json({ reply: "I can't help with that one. Try asking another way." });
         if ("error" in r) { log(`chat error ${r.error}`); return json({ error: "The chat is busy. Try again in a moment." }, 502); }
         return json({ reply: r.text });

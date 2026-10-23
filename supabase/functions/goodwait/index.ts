@@ -17,9 +17,9 @@ const keys: Keys = { ...fromEnv };
 let resendKey = env("RESEND_API_KEY") || "";
 // Claude key for the web chat: secret ANTHROPIC_API_KEY, else Vault impact_wait_anthropic_key. Unset = chat answers 503.
 let anthropicKey = env("ANTHROPIC_API_KEY") || "";
-// Kevin's pick (10-23): Haiku 5.5. A chat message costs well under the sponsored line it earns;
-// GOODWAIT_CHAT_MODEL overrides.
-const CHAT_MODEL = env("GOODWAIT_CHAT_MODEL") || "claude-haiku-5-5";
+// The chat runs on Claude Haiku 5.5 only (chat.ts CHAT_MODEL), and stops for the month at
+// GOODWAIT_CHAT_MONTHLY_CAP_USD (default $200) of model spend (app.ts).
+const CHAT_CAP_USD = Number(env("GOODWAIT_CHAT_MONTHLY_CAP_USD")) || 200;
 
 async function refreshKeys() {
   try {
@@ -86,7 +86,7 @@ let chatImpl: { key: string; fn: ChatFn } | null = null;
 const chat: ChatFn = async (turns) => {
   if (!chatImpl || chatImpl.key !== anthropicKey) {
     const { claudeChat } = await import("./chat.ts");
-    chatImpl = { key: anthropicKey, fn: claudeChat(anthropicKey, CHAT_MODEL) };
+    chatImpl = { key: anthropicKey, fn: claudeChat(anthropicKey) };
   }
   return chatImpl.fn(turns);
 };
@@ -101,6 +101,7 @@ const app = createApp({
   mailer,
   chat,
   chatEnabled: () => !!anthropicKey,
+  chatMonthlyCapUsd: CHAT_CAP_USD,
   // www is the canonical host (the apex redirects there), so sign-in links skip a hop.
   appUrl: env("GOODWAIT_APP_URL") || "https://www.vibedough.com/app",
 });

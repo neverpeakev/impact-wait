@@ -8,6 +8,7 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
   const accounts = new Map<string, any>();
   const taxForms = new Map<string, any>();
   const rates: { kind: string; key: string; at: number }[] = [];
+  const chatUsage: { account_id: string; cost_usd: number; at: number }[] = [];
   const A31 = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const newCode = () => { const c = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => A31[b % 31]).join(""); return `VD-${c.slice(0, 4)}-${c.slice(4)}`; };
   const pubAccount = (a: any) => ({ id: a.id, user_id: a.user_id, email: a.email, install_code: a.install_code, paypal_email: a.paypal_email, created_at: a.created_at, welcome_sent_at: a.welcome_sent_at });
@@ -218,6 +219,8 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
     },
     async earnerAccount(earnerId) { return earners.get(earnerId)?.account_id ?? null; },
     async touchEarner(earnerId) { const e = earners.get(earnerId); if (e) e.last_seen_at = new Date(); },
+    async chatSpendSince(since) { return chatUsage.filter((u) => u.at >= since.getTime()).reduce((t, u) => t + u.cost_usd, 0); },
+    async recordChatUsage(row) { chatUsage.push({ ...row, at: Date.now() }); },
     async rateCount(kind, key, seconds) { return rates.filter((r) => r.kind === kind && r.key === key && r.at > Date.now() - seconds * 1000).length; },
     async rateHit(kind, key) { rates.push({ kind, key, at: Date.now() }); },
     async stats(site) {

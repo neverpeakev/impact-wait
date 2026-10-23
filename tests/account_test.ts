@@ -13,7 +13,7 @@ const USERS: Record<string, { id: string; email: string; provider: string }> = {
 };
 const W9 = { legal_name: "Ana Lopez", tax_class: "individual", line1: "1 Main St", city: "El Segundo", state: "CA", zip: "90245", tin_type: "ssn", tin: "123-45-6789", certify: true, signature: "Ana Lopez" };
 
-function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: boolean; chat?: boolean; chatPerDay?: number } = {}) {
+function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: boolean; chat?: boolean; chatPerDay?: number; chatCap?: number; replyCost?: number } = {}) {
   const store = memStore({}, opts.program);
   const mail: Email[] = [];
   const auth: AuthApi = {
@@ -22,7 +22,9 @@ function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: bo
   };
   const app = createApp({ store, keys: {}, baseUrl: BASE, salt: "t", auth, appUrl: "https://vibedough.com/app",
     mailer: async (m) => { mail.push(m); return opts.mailOk ?? true; },
-    chat: opts.chat ? async (turns) => ({ text: `echo: ${turns[turns.length - 1].content}` }) : undefined, chatPerDay: opts.chatPerDay });
+    chat: opts.chat ? async (turns) => ({ text: `echo: ${turns[turns.length - 1].content}`,
+      usage: { model: "claude-haiku-5-5", input_tokens: 1000, output_tokens: 400, cache_write_tokens: 0, cache_read_tokens: 0, cost_usd: opts.replyCost ?? 0.0003 } }) : undefined,
+    chatPerDay: opts.chatPerDay, chatMonthlyCapUsd: opts.chatCap });
   const call = (path: string, init: RequestInit = {}, ip = "1.1.1.1") =>
     app(new Request(BASE + path, { ...init, headers: { "content-type": "application/json", "cf-connecting-ip": ip, ...(init.headers || {}) } }));
   const as = (who: string, path: string, body?: unknown) =>
@@ -300,4 +302,26 @@ Deno.test("web chat Velocity view: counted once per request id and credited to t
   const me = await (await t.as("ana", "/account/me")).json();
   assertMatch(me.ad_user_id, /^[0-9a-f]{32}$/);
   assert(!me.ad_user_id.includes("ana"));
+});
+
+Deno.test("web chat: stops for the month at the dollar cap, and ads stop with it", async () => {
+  const t = mk({ chat: true, chatCap: 1, replyCost: 0.4 });
+  const say = (text: string) => t.as("ana", "/account/chat", { messages: [{ role: "user", content: text }] });
+  assertEquals((await say("one")).status, 200);
+  assertEquals((await say("two")).status, 200); // $0.80 spent
+  assertEquals((await (await t.as("ana", "/account/me")).json()).chat_open, true);
+  assertEquals((await say("three")).status, 200); // $1.20: over the cap from here on
+  const r = await say("four");
+  assertEquals(r.status, 503);
+  assertMatch((await r.json()).error, /paused until the 1st/);
+  assertEquals((await (await t.as("ana", "/account/me")).json()).chat_open, false, "no sponsored lines while the chat is paused");
+});
+
+Deno.test("chat cost: Haiku 5.5 list prices, long prompts at the higher tier, rounded up", async () => {
+  const { chatCost, CHAT_MODEL } = await import("../supabase/functions/goodwait/chat.ts");
+  assertEquals(CHAT_MODEL, "claude-haiku-5-5");
+  assertEquals(chatCost({ input_tokens: 1_000_000, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.5); // over 100K: $0.50/M
+  assertEquals(chatCost({ input_tokens: 10_000, output_tokens: 1_000, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.0015); // $0.001 + $0.0005
+  assertEquals(chatCost({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 8_000, cache_read_tokens: 10_000 }), 0.0011); // 8K x 0.125 + 10K x 0.01
+  assertEquals(chatCost({ input_tokens: 1, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.000001, "never rounds down to free");
 });

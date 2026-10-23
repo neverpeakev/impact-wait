@@ -250,6 +250,14 @@ export function pgStore(dbUrl: string): Store {
     async touchEarner(earnerId) {
       await sql`update impact_wait.earners set last_seen_at = now() where id = ${earnerId} and (last_seen_at is null or last_seen_at < now() - interval '5 minutes')`;
     },
+    async chatSpendSince(since) {
+      const [r] = await sql`select coalesce(sum(cost_usd), 0)::float8 as usd from impact_wait.chat_usage where created_at >= ${since}`;
+      return Number(r.usd);
+    },
+    async recordChatUsage(row) {
+      await sql`insert into impact_wait.chat_usage (account_id, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, cost_usd)
+        values (${row.account_id}, ${row.model}, ${row.input_tokens}, ${row.output_tokens}, ${row.cache_write_tokens}, ${row.cache_read_tokens}, ${row.cost_usd})`;
+    },
     async rateCount(kind, key, seconds) {
       const [r] = await sql`select count(*)::int as n from impact_wait.rate_events where kind = ${kind} and key = ${key} and created_at > now() - make_interval(secs => ${seconds})`;
       return r.n;
