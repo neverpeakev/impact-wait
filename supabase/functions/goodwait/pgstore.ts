@@ -151,6 +151,9 @@ export function pgStore(dbUrl: string): Store {
       await sql`update impact_wait.earners set payout_email = ${email} where id = ${earnerId}`;
     },
     async ensureAccount(row) {
+      // Almost every call is a returning account with the same email: one read and done.
+      const [have] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where user_id = ${row.user_id}`;
+      if (have && have.email === row.email) return { account: have as unknown as Account, created: false };
       // The install code comes from the column default; a rare collision just retries.
       for (let i = 0; ; i++) {
         try {

@@ -111,6 +111,7 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
 .bubble.me{align-self:flex-end;background:var(--cobalt);color:#fff;border-bottom-right-radius:6px}
 .bubble.ai{align-self:flex-start;background:#fff;border-bottom-left-radius:6px}
 .bubble.ai pre{background:var(--term);color:var(--term-text);padding:10px;border-radius:8px;overflow-x:auto;font:400 13px/1.5 "JetBrains Mono",monospace;white-space:pre}
+.slot{display:contents}
 .thinking{align-self:flex-start;color:var(--ink-soft);font-size:14px;display:flex;align-items:center;gap:8px}
 .sponsor{align-self:stretch;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;text-decoration:none;color:var(--ink);background:#fff;border-left:3px solid #6E8BFF;border-radius:10px;padding:10px 12px;font-size:14px}
 .sponsor .tag{font:600 10.5px/1.6 "Public Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#0E1730;background:#8EA6FF;border-radius:4px;padding:1px 6px}
@@ -349,9 +350,11 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
       q.value = ""; q.style.height = "auto";
       log.querySelector(".notice")?.remove();
       chatLog.push({ role: "user", content: text }); saveChat();
-      log.insertAdjacentHTML("beforeend", `<div class="bubble me">${esc(text)}</div><div class="thinking"><span class="pulse"></span>Thinking…</div>`);
+      // The slot keeps the sponsored line in place above the reply, whichever arrives first.
+      log.insertAdjacentHTML("beforeend", `<div class="bubble me">${esc(text)}</div><div class="slot"></div><div class="thinking"><span class="pulse"></span>Thinking…</div>`);
       log.scrollTop = log.scrollHeight;
-      const thinking = log.querySelector(".thinking:last-of-type");
+      const slots = log.querySelectorAll(".slot"), slot = slots[slots.length - 1];
+      const thinking = log.querySelector(".thinking");
       // The sponsored line and the reply are fetched together; the line shows while the reply is on its way.
       VD.api("/account/ad", { query: text.slice(0, 500) }).then((r) => {
         if (r.status !== 200 || !r.data.ad) return;
@@ -359,7 +362,7 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
         const el = document.createElement("a");
         el.className = "sponsor"; el.href = a.clickUrl; el.target = "_blank"; el.rel = "sponsored noopener";
         el.innerHTML = `<span class="tag">${esc(a.label || "Sponsored")}</span><b>${esc(a.brand)}</b><span>${esc(a.headline)}</span><span class="cta">${esc(a.cta || "Learn more")} →</span>`;
-        thinking.after(el);
+        slot.appendChild(el);
         log.scrollTop = log.scrollHeight;
         // A view counts after a full second on screen, with the page in front.
         setTimeout(() => { if (!document.hidden && el.isConnected) fetch(VD.API + "/event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: r.data.id, type: "impression" }), keepalive: true }).catch(() => {}); }, 1100);

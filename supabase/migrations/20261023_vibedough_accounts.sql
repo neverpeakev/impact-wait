@@ -159,4 +159,5 @@ revoke all on sequence impact_wait.rate_events_id_seq from anon, authenticated;
 --   select a.email, e.id, e.linked_at, e.last_seen_at from impact_wait.earners e join impact_wait.accounts a on a.id = e.account_id;
 --   select impact_wait.reveal_tin('<account id>');                      -- 1099 filing only
 --   update impact_wait.program set earnings_need_payout_info = false;  -- show earnings before PayPal + W-9
---   delete from impact_wait.rate_events where created_at < now() - interval '2 days';
+-- Nightly cleanup of the rate-limit log (applied with this migration):
+--   select cron.schedule('impact_wait_rate_events_cleanup', '17 4 * * *', $$delete from impact_wait.rate_events where created_at < now() - interval '2 days'$$);
