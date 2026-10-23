@@ -31,6 +31,8 @@ type World = {
   me: Record<string, unknown>
   payoutEmail: string | null
   signupStatus: number
+  links: string[]
+  linkStatus: number
 }
 
 const world = (): World => ({
@@ -40,6 +42,8 @@ const world = (): World => ({
   signups: 0,
   creditNext: true,
   signupStatus: 201,
+  links: [],
+  linkStatus: 200,
   payoutEmail: null,
   me: {
     earner_id: 'e1', status: 'active', credited_total: 0, credited_today: 0, pending_waits: 0, owed_usd: 0, paid_usd: 0,
@@ -93,6 +97,12 @@ function bottom(on: On, w: World) {
       if (give <= 0) return res(409, { error: 'nothing to donate yet' })
       w.me = { ...w.me, balance_usd: bal - give, owed_usd: bal - give, donated_usd: Number(w.me.donated_usd ?? 0) + give }
       return res(200, { ok: true, donated_usd: give, balance_usd: bal - give, cause: 'charity: water' })
+    }
+    if (e.url.endsWith('/earner/link')) {
+      if (!authed) return res(401, {})
+      w.links.push(JSON.parse(e.init?.body ?? '{}').code)
+      if (w.linkStatus === 200) w.me = { ...w.me, account_linked: true }
+      return w.linkStatus === 200 ? res(200, { ok: true, email: 'k***@example.com', paypal_email: null }) : res(w.linkStatus, { error: 'this install is already linked to a different account' })
     }
     if (e.url.endsWith('/earner/exit')) {
       if (!authed) return res(401, {})
@@ -296,4 +306,59 @@ test('/earn shows draw entries and the invite code when the server sends them', 
   await start($, clock)
   const bal = await $.command.run({ command: 'earn', args: '', ...RUN })
   expect(bal.text).toMatch(/ · 42 entries in the Launch draw · invite code xk7m2pqr$/)
+})
+
+test('/earn link joins a vibedough.com account; pasted codes are cleaned up, junk never sent', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  bottom(on, w)
+  await start($, clock)
+  const bad = await $.command.run({ command: 'earn', args: 'link hello', ...RUN })
+  expect(bad.text).toMatch(/Use \/earn link VD-XXXX-XXXX/)
+  expect(w.links.length).toBe(0)
+  const ok = await $.command.run({ command: 'earn', args: 'link vd abcd efgh', ...RUN })
+  expect(w.links).toEqual(['VD-ABCD-EFGH'])
+  expect(ok.text).toBe('Linked to your Vibedough account (k***@example.com). Your earnings show at https://vibedough.com/app.')
+  w.linkStatus = 409
+  const taken = await $.command.run({ command: 'earn', args: 'link VD-ABCD-EFGH', ...RUN })
+  expect(taken.text).toBe('Not linked: this install is already linked to a different account.')
+})
+
+test('/earn says when the install is not linked to an account yet', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.me = { ...w.me, account_linked: false }
+  bottom(on, w)
+  await start($, clock)
+  const r = await $.command.run({ command: 'earn', args: '', ...RUN })
+  expect(r.text).toMatch(/not linked to a Vibedough account \(\/earn link VD-XXXX-XXXX from https:\/\/vibedough\.com\/app\)$/)
+})
+
+test('the Account code setting links on first run, once; a failed code is not retried every session', { options: { accountCode: 'vd-wxyz-2345' } }, async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.me = { ...w.me, account_linked: false }
+  w.linkStatus = 404
+  bottom(on, w)
+  await start($, clock)
+  expect(w.links).toEqual(['VD-WXYZ-2345'])
+  expect(w.toasts.some(t => /doesn't match an account/.test(t))).toBe(true)
+  await start($, clock) // next session: same code, already tried
+  expect(w.links.length).toBe(1)
+})
+
+test('the Account code setting links silently when the server says it is not linked', { options: { accountCode: 'VD-WXYZ-2345' } }, async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const w = world()
+  w.me = { ...w.me, account_linked: false }
+  bottom(on, w)
+  await start($, clock)
+  expect(w.links).toEqual(['VD-WXYZ-2345'])
+  expect(w.toasts.some(t => /^Linked to your Vibedough account/.test(t))).toBe(true)
+  await start($, clock) // now linked: nothing more to do
+  expect(w.links.length).toBe(1)
 })

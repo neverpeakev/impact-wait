@@ -46,6 +46,12 @@
       "description": "A friend's 8-character invite code. Set it before your first run; they get 10% of what you earn, paid from our half, never yours.",
       "default": ""
     },
+    "accountCode": {
+      "type": "string",
+      "title": "Account code",
+      "description": "The install code from your vibedough.com account (VD-XXXX-XXXX). This install links to that account on its next start; /earn link does the same any time.",
+      "default": ""
+    },
     "velocitySiteUrl": {
       "type": "string",
       "title": "Velocity site URL",
