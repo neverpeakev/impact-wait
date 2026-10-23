@@ -334,11 +334,84 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
   // Minimal formatting: fenced code blocks, everything else as text.
   const fmt = (t) => esc(t).replace(/```[a-z0-9]*\n?([\s\S]*?)```/gi, "<pre>$1</pre>");
 
+  // ------------------------------------------------------------ Velocity (called from this browser)
+  // Velocity serves ads only to calls made from the viewer's own device. The ad unit is registered to
+  // impact-wait.vercel.app, the same deployment www.vibedough.com serves, so that is the domain we report.
+  const VLC = { gw: "https://gw.vlcapi.net", key: "b9fb08c9ea6c", unit: "e7b24fe95681", domain: "impact-wait.vercel.app", ms: 2500 };
+  // Our own session id until Velocity's /init hands back its own.
+  let vlcSession = "vd_" + Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, "0")).join("");
+  let vlcReady = null, vlcFailedAt = 0, vlcDepth = 1;
+  const httpsOnly = (u) => (typeof u === "string" && /^https:\/\//i.test(u) ? u : "");
+  function vlcMeta() {
+    let timezone = "UTC";
+    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (_) {}
+    // Never the query string or hash: sign-in tokens can ride on them.
+    return { platform: "web", sdkVersion: "vibedough-web/1.0.0", timestamp: Date.now(), timezone, webMetadata: { domainName: VLC.domain, fullUrl: location.origin + location.pathname } };
+  }
+  async function vlcPost(path, body) {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), VLC.ms);
+    try { return await fetch(VLC.gw + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), credentials: "omit", signal: ctrl.signal }); }
+    finally { clearTimeout(t); }
+  }
+  const vlcUser = () => (acct && acct.ad_user_id ? { publisherUserId: acct.ad_user_id } : {});
+  // One native ad for this message, or null (no fill, error, or slower than 2.5s).
+  async function velocityAd(query) {
+    if (!vlcReady) {
+      if (vlcFailedAt && Date.now() - vlcFailedAt < 60000) return null; // after a failed init, wait a minute
+      vlcReady = vlcPost("/init", { publisherKey: VLC.key, consent: null, metadata: vlcMeta(), ...vlcUser() }).then(async (r) => {
+        if (!r.ok) return false;
+        const j = await r.json().catch(() => ({}));
+        if (typeof j.sessionId === "string" && /^[A-Za-z0-9._:-]{8,128}$/.test(j.sessionId)) vlcSession = j.sessionId;
+        return true;
+      }, () => false);
+      vlcReady.then((ok) => { if (!ok) { vlcReady = null; vlcFailedAt = Date.now(); } });
+    }
+    if (!(await vlcReady)) return null;
+    try {
+      const r = await vlcPost("/v2/load", { publisherKey: VLC.key, sessionId: vlcSession, prompt: query,
+        additionalContext: mobile ? "A person chatting with an AI assistant on their phone." : "A person chatting with an AI assistant in their web browser.",
+        adUnitId: VLC.unit, adUnitDepth: vlcDepth, adType: "native_ad", adSize: "S", biddingTokens: {}, consent: null, metadata: vlcMeta(), ...vlcUser() });
+      if (r.status !== 200) return null;
+      const j = await r.json();
+      const p = j.ads && j.ads[0] && j.ads[0].adPayload;
+      const str = (v) => (typeof v === "string" ? v : "");
+      const impressionUrl = httpsOnly(p && p.impressionUrl), clickUrl = httpsOnly(p && p.clickUrl);
+      const requestId = str(j.requestId);
+      if (!p || !impressionUrl || !clickUrl || !/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) return null;
+      const headline = str(p.title) || str(p.advertiserName);
+      if (!headline) return null;
+      return { label: str(p.sponsoredLabel) || "Sponsored", brand: str(p.advertiserName), headline, cta: str(p.callToAction) || "Learn more", clickUrl, impressionUrl, requestId, adId: str(p.id) || null };
+    } catch (_) { return null; }
+  }
+  // Fires Velocity's impression from this browser, then reports the view once so it credits the account.
+  async function velocityView(ad) {
+    try { await fetch(ad.impressionUrl, { mode: "no-cors", credentials: "omit", keepalive: true }); } catch (_) { return; } // Velocity didn't get it: claim nothing
+    vlcDepth += 1;
+    VD.api("/account/impression", { network: "velocity", request_id: ad.requestId, ad_id: ad.adId }).catch(() => {});
+  }
+  function sponsorEl(a) {
+    const el = document.createElement("a");
+    el.className = "sponsor"; el.href = a.clickUrl; el.target = "_blank"; el.rel = "sponsored noopener";
+    el.innerHTML = `<span class="tag">${esc(a.label || "Sponsored")}</span>${a.brand && !a.headline.toLowerCase().includes(a.brand.toLowerCase()) ? `<b>${esc(a.brand)}</b>` : ""}<span>${esc(a.headline)}</span><span class="cta">${esc(a.cta || "Learn more")} →</span>`;
+    return el;
+  }
+  // The sponsored line for a message: Velocity only. No fill means no line (never a house ad: those
+  // pay nobody). A view counts after a full second on screen with the page in front.
+  async function showSponsor(slot, log, query) {
+    if (!acct || acct.chat_open === false) return;
+    const v = await velocityAd(query);
+    if (!v) return;
+    const el = sponsorEl(v);
+    slot.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    setTimeout(() => { if (!document.hidden && el.isConnected) velocityView(v); }, 1100);
+  }
+
   function renderChat(pane) {
     pane.innerHTML = `<div class="chat"><div class="log" id="log" aria-live="polite"></div>
       <form class="compose" id="compose"><textarea id="q" rows="1" placeholder="Ask anything…" aria-label="Message"></textarea><button type="submit" aria-label="Send">↑</button></form></div>`;
     const log = document.getElementById("log"), form = document.getElementById("compose"), q = document.getElementById("q");
-    if (!chatLog.length) log.innerHTML = `<div class="notice">Chat about code, side projects, anything. While it thinks you'll see one sponsored line, and half of what it earns is yours.</div>`;
+    if (!chatLog.length) log.innerHTML = `<div class="notice">Chat about code, side projects, anything. While it thinks you may see a sponsored line, and half of what it earns is yours.</div>`;
     for (const m of chatLog) log.insertAdjacentHTML("beforeend", `<div class="bubble ${m.role === "user" ? "me" : "ai"}">${m.role === "user" ? esc(m.content) : fmt(m.content)}</div>`);
     log.scrollTop = log.scrollHeight;
     q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 140) + "px"; });
@@ -355,18 +428,8 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
       log.scrollTop = log.scrollHeight;
       const slots = log.querySelectorAll(".slot"), slot = slots[slots.length - 1];
       const thinking = log.querySelector(".thinking");
-      // The sponsored line and the reply are fetched together; the line shows while the reply is on its way.
-      VD.api("/account/ad", { query: text.slice(0, 500) }).then((r) => {
-        if (r.status !== 200 || !r.data.ad) return;
-        const a = r.data.ad;
-        const el = document.createElement("a");
-        el.className = "sponsor"; el.href = a.clickUrl; el.target = "_blank"; el.rel = "sponsored noopener";
-        el.innerHTML = `<span class="tag">${esc(a.label || "Sponsored")}</span><b>${esc(a.brand)}</b><span>${esc(a.headline)}</span><span class="cta">${esc(a.cta || "Learn more")} →</span>`;
-        slot.appendChild(el);
-        log.scrollTop = log.scrollHeight;
-        // A view counts after a full second on screen, with the page in front.
-        setTimeout(() => { if (!document.hidden && el.isConnected) fetch(VD.API + "/event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: r.data.id, type: "impression" }), keepalive: true }).catch(() => {}); }, 1100);
-      }).catch(() => {});
+      // The sponsored line and the reply are fetched together; a line shows while the reply is on its way.
+      showSponsor(slot, log, text.slice(0, 500)).catch(() => {});
       const r = await VD.api("/account/chat", { messages: chatLog.slice(-20) }).catch(() => ({ status: 0, data: {} }));
       thinking.remove();
       if (r.status === 200 && r.data.reply) {

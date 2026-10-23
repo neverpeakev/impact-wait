@@ -1,5 +1,5 @@
 // Goodwait API. Routes (all under /functions/v1/goodwait):
-//   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact}
+//   POST /ad      {site, query, response?, sessionId?} -> {id, ad, impact} (ad null for earners when nothing paying fills)
 //   POST /event   {id, type:"impression"}               -> {ok}
 //   GET  /click?id=...                                   -> 302 to the advertiser
 //   GET  /stats?site=...                                 -> public counter + leaderboard (+ actual earnings for the site)
@@ -20,7 +20,8 @@
 //   POST /account/w9      {legal_name, ..., tin, certify, signature} -> {ok, tin_last4}
 //   POST /account/code    {}                             -> a fresh install code (the old one stops working)
 //   POST /earner/link     {code} + earner Bearer         -> joins this install to the account that owns the code
-//   POST /account/ad      {query}                        -> a sponsored line for the web chat, credited to the account
+//   POST /account/impression {network, request_id, ad_id?} -> {ok, counted, credited}: a view of an ad the web
+//        chat fetched from Velocity in the browser (after firing Velocity's impression URL), credited to the account
 //   POST /account/chat    {messages: [{role, content}]}  -> {reply} (503 until a model key is set)
 // Referrals: POST /earner takes {invite: "<code>"}; the referrer earns 10% of the friend's share,
 // paid out of the house half at settlement (see settle()). Never multi-level.
@@ -97,6 +98,9 @@ export interface Store {
   webEarner(accountId: string, ipHash: string): Promise<string>;
   // Marks an install as alive (throttled in the store). Drives "installed" on the account page.
   touchEarner(earnerId: string): Promise<void>;
+  // Web chat model spend (USD) since a moment, and one reply's usage.
+  chatSpendSince(since: Date): Promise<number>;
+  recordChatUsage(row: { account_id: string; model: string; input_tokens: number; output_tokens: number; cache_write_tokens: number; cache_read_tokens: number; cost_usd: number }): Promise<void>;
   rateCount(kind: string, key: string, seconds: number): Promise<number>;
   rateHit(kind: string, key: string): Promise<void>;
   stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact; earnings?: Earning[] }>;
@@ -151,6 +155,8 @@ function sessionToken(req: Request): string {
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
   return m && m[1].length < 8192 && JWT_RE.test(m[1]) ? m[1] : "";
 }
+// The Claude Code plugin's site key (its users are all earners).
+const PLUGIN_SITE = "claude-code";
 // The site key for views in the Vibedough web chat.
 const WEB_SITE = "vibedough-app";
 const SIGNIN_PER_EMAIL_HOUR = 5;
@@ -185,7 +191,7 @@ export function impactSummary(impact: Impact, totalWaits: number) {
 }
 
 export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; salt: string; fetch?: typeof fetch; minImpressionMs?: number; rateLimitPerMin?: number; log?: (m: string) => void;
-  auth?: AuthApi; mailer?: Mailer; appUrl?: string; chat?: ChatFn; chatEnabled?: () => boolean; chatPerDay?: number }) {
+  auth?: AuthApi; mailer?: Mailer; appUrl?: string; chat?: ChatFn; chatEnabled?: () => boolean; chatPerDay?: number; chatMonthlyCapUsd?: number }) {
   const { store, keys, baseUrl, salt } = opts;
   const appUrl = opts.appUrl || "https://vibedough.com/app";
   const mailer: Mailer = opts.mailer || (async () => false);
@@ -195,17 +201,48 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
   const minMs = opts.minImpressionMs ?? 900;
   const rate = opts.rateLimitPerMin ?? 30;
   const log = opts.log || (() => {});
+  // The chat stops for the rest of the calendar month (UTC) once its model spend reaches the cap.
+  const chatCap = opts.chatMonthlyCapUsd ?? 200;
+  let spend = { at: 0, month: "", usd: 0 };
+  const monthStart = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); };
+  async function chatSpend(fresh = false) {
+    const m = monthStart().toISOString();
+    if (fresh || spend.month !== m || Date.now() - spend.at > 60_000) spend = { at: Date.now(), month: m, usd: await store.chatSpendSince(monthStart()) };
+    return spend.usd;
+  }
+  const chatOpen = async () => !!opts.chat && (!opts.chatEnabled || opts.chatEnabled()) && (await chatSpend()) < chatCap;
 
   // One sponsored line: the network chain, then the ad row (credited later, at its impression).
-  async function serveAd(o: { site: string; query: string; response: string; sessionId: string; origin: string; ipHash: string; earnerId: string | null; sandbox: boolean; debug?: boolean }) {
+  // paidOnly: people who are told they earn from views (earners, the Claude Code plugin) never get a
+  // house ad; with no paying fill the answer is {ad: null} and nothing shows.
+  async function serveAd(o: { site: string; query: string; response: string; sessionId: string; origin: string; ipHash: string; earnerId: string | null; sandbox: boolean; paidOnly: boolean; debug?: boolean }) {
     let host = "chat.example";
     try { if (o.origin) host = new URL(o.origin).host || host; } catch (_) { /* keep default */ }
     const ctx = { query: o.query, response: o.response, sessionId: o.sessionId, host };
     const { ad, attempts } = await runChain(ctx, o.sandbox ? {} : keys, f);
+    if (o.paidOnly && !o.sandbox && !ad.live) {
+      log(`ad site=${o.site} no paid fill (no house ad for earners) ${attempts.map((a: Attempt) => `${a.provider}:${a.result}`).join(" ")}`);
+      return { id: null, ad: null, attempts: o.debug ? attempts : undefined };
+    }
     const id = await store.insertAd({ site_key: o.sandbox ? SANDBOX_SITE : o.site, provider: ad.provider, live: ad.live, tracking: ad.tracking, click_url: ad.clickUrl, ip_hash: o.ipHash, origin: o.origin, earner_id: o.earnerId });
     const st = await store.stats(null);
     log(`ad site=${o.site}${o.sandbox ? " (sandbox)" : ""} provider=${ad.provider} ${attempts.map((a: Attempt) => `${a.provider}:${a.result}${a.note ? "(" + a.note + ")" : ""}`).join(" ")}`);
     return { id, ad: publicAd(ad, `${baseUrl}/click?id=${id}`), impact: impactSummary(st.impact, st.total.sponsored_waits), sandbox: o.sandbox || undefined, attempts: o.debug ? attempts : undefined };
+  }
+
+  // Counts (once per network request id) a view the client already reported to the network, and credits it.
+  async function recordExternal(o: { site: string; network: string; requestId: string; adId: unknown; ipHash: string; origin: string; earnerId: string | null }) {
+    const adId = typeof o.adId === "string" ? o.adId.slice(0, 128) : null;
+    const id = await store.insertExternalImpression({ site_key: o.site, provider: o.network, tracking: { requestId: o.requestId, adId, clientReported: true }, ip_hash: o.ipHash, origin: o.origin, earner_id: o.earnerId });
+    if (!id) return { ok: true, counted: false, duplicate: true };
+    await store.finishImpression(id, o.site, 200, true);
+    let credited = false;
+    if (o.earnerId) {
+      const p = await store.program();
+      credited = await store.creditImpression(id, o.earnerId, p.daily_cap, p.min_gap_seconds);
+    }
+    log(`impression site=${o.site} provider=${o.network} client-reported${o.earnerId ? ` earner credited=${credited}` : ""}`);
+    return { ok: true, counted: true, credited };
   }
 
   // The signed-in person's account, created on first sight. Sends the welcome email exactly once.
@@ -253,6 +290,10 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       installs: plugins.length, installed: lastSeen > fresh, last_seen_at: lastSeen ? new Date(lastSeen).toISOString() : null,
       paypal_email: maskEmail(account.paypal_email), w9: tax ? { on_file: true, tin_type: tax.tin_type, tin_last4: tax.tin_last4, signed_at: tax.signed_at } : { on_file: false },
       payout_ready: payoutReady, earnings_locked: gated, earnings,
+      // An opaque id the web chat passes to ad networks as the publisher's user id (never the email).
+      ad_user_id: await sha(`ad-user|${account.id}|${salt}`),
+      // The web chat only asks for ads while it can answer: no sponsored line on a message that gets no reply.
+      chat_open: await chatOpen(),
     };
   }
 
@@ -288,7 +329,8 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           if (e && e.status === "active") earnerId = e.id;
         }
         if (earnerId) await store.touchEarner(earnerId);
-        return json(await serveAd({ site, query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox, debug: !!b.debug }));
+        const paidOnly = typeof b.earner === "string" || site === PLUGIN_SITE;
+        return json(await serveAd({ site, query, response: String(b.response || "").slice(0, 1500), sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox, paidOnly, debug: !!b.debug }));
       }
 
       if (route === "/event" && req.method === "POST") {
@@ -328,17 +370,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           if (e && e.status === "active") earnerId = e.id;
         }
         if (earnerId) await store.touchEarner(earnerId);
-        const adId = typeof b.ad_id === "string" ? b.ad_id.slice(0, 128) : null;
-        const id = await store.insertExternalImpression({ site_key: site, provider: network, tracking: { requestId, adId, clientReported: true }, ip_hash: ipHash, origin, earner_id: earnerId });
-        if (!id) return json({ ok: true, counted: false, duplicate: true });
-        await store.finishImpression(id, site, 200, true);
-        let credited = false;
-        if (earnerId) {
-          const p = await store.program();
-          credited = await store.creditImpression(id, earnerId, p.daily_cap, p.min_gap_seconds);
-        }
-        log(`impression site=${site} provider=${network} client-reported${earnerId ? ` earner credited=${credited}` : ""}`);
-        return json({ ok: true, counted: true, credited });
+        return json(await recordExternal({ site, network, requestId, adId: b.ad_id, ipHash, origin, earnerId }));
       }
 
       if (route === "/click" && req.method === "GET") {
@@ -525,23 +557,27 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         return json({ ok: true, tin_type: r.form.tin_type, tin_last4: last4 });
       }
 
-      if (route === "/account/ad" && req.method === "POST") {
+      if (route === "/account/impression" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
         const b = await req.json().catch(() => ({}));
-        const query = String(b.query || "").slice(0, 500).trim();
-        if (!query) return json({ error: "query required" }, 400);
+        const network = String(b.network || "");
+        const requestId = String(b.request_id || "");
+        if (!EXTERNAL_NETWORKS.has(network) || !REQUEST_ID_RE.test(requestId)) return json({ error: "bad impression" }, 400);
+        if (isDevOrigin(origin, WEB_SITE)) return json({ ok: true, counted: false, sandbox: true });
+        if (!(await store.ensureSite(WEB_SITE, origin))) return json({ error: "site disabled" }, 403);
         if ((await store.recentAds(ipHash, 60)) >= rate) return json({ error: "rate limited" }, 429, { "Retry-After": "30" });
-        const sandbox = isDevOrigin(origin, WEB_SITE);
-        if (!sandbox && !(await store.ensureSite(WEB_SITE, origin))) return json({ error: "site disabled" }, 403);
-        const earnerId = sandbox ? null : await store.webEarner(s.account.id, ipHash);
-        return json(await serveAd({ site: WEB_SITE, query, response: "", sessionId: String(b.sessionId || crypto.randomUUID()).slice(0, 80), origin, ipHash, earnerId, sandbox }));
+        const earnerId = await store.webEarner(s.account.id, ipHash);
+        return json(await recordExternal({ site: WEB_SITE, network, requestId, adId: b.ad_id, ipHash, origin, earnerId }));
       }
 
       if (route === "/account/chat" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
-        if (!opts.chat || (opts.chatEnabled && !opts.chatEnabled())) return json({ error: "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        if (!opts.chat || !(await chatOpen())) {
+          const capped = !!opts.chat && (!opts.chatEnabled || opts.chatEnabled());
+          return json({ error: capped ? "Chat is paused until the 1st. Your earnings and installs keep working." : "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
+        }
         const b = await req.json().catch(() => ({}));
         const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
         const turns: ChatTurn[] = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
@@ -550,7 +586,13 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (!turns.length || turns[turns.length - 1].role !== "user") return json({ error: "send a message" }, 400);
         if ((await store.rateCount("chat", s.account.id, 86400)) >= chatPerDay) return json({ error: `That's today's ${chatPerDay} messages. More tomorrow.` }, 429);
         await store.rateHit("chat", s.account.id);
+        // Re-check against the database (not the 60s cache) right before spending.
+        if ((await chatSpend(true)) >= chatCap) { log(`chat paused: month spend reached $${chatCap}`); return json({ error: "Chat is paused until the 1st. Your earnings and installs keep working." }, 503); }
         const r = await opts.chat(turns);
+        if (r.usage) {
+          await store.recordChatUsage({ account_id: s.account.id, ...r.usage }).catch((e) => log(`chat usage not recorded: ${(e as Error).message}`));
+          spend.usd += r.usage.cost_usd;
+        }
         if ("refused" in r) return json({ reply: "I can't help with that one. Try asking another way." });
         if ("error" in r) { log(`chat error ${r.error}`); return json({ error: "The chat is busy. Try again in a moment." }, 502); }
         return json({ reply: r.text });

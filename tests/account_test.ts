@@ -13,7 +13,7 @@ const USERS: Record<string, { id: string; email: string; provider: string }> = {
 };
 const W9 = { legal_name: "Ana Lopez", tax_class: "individual", line1: "1 Main St", city: "El Segundo", state: "CA", zip: "90245", tin_type: "ssn", tin: "123-45-6789", certify: true, signature: "Ana Lopez" };
 
-function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: boolean; chat?: boolean; chatPerDay?: number } = {}) {
+function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: boolean; chat?: boolean; chatPerDay?: number; chatCap?: number; replyCost?: number } = {}) {
   const store = memStore({}, opts.program);
   const mail: Email[] = [];
   const auth: AuthApi = {
@@ -22,7 +22,9 @@ function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: bo
   };
   const app = createApp({ store, keys: {}, baseUrl: BASE, salt: "t", auth, appUrl: "https://vibedough.com/app",
     mailer: async (m) => { mail.push(m); return opts.mailOk ?? true; },
-    chat: opts.chat ? async (turns) => ({ text: `echo: ${turns[turns.length - 1].content}` }) : undefined, chatPerDay: opts.chatPerDay });
+    chat: opts.chat ? async (turns) => ({ text: `echo: ${turns[turns.length - 1].content}`,
+      usage: { model: "claude-haiku-5-5", input_tokens: 1000, output_tokens: 400, cache_write_tokens: 0, cache_read_tokens: 0, cost_usd: opts.replyCost ?? 0.0003 } }) : undefined,
+    chatPerDay: opts.chatPerDay, chatMonthlyCapUsd: opts.chatCap });
   const call = (path: string, init: RequestInit = {}, ip = "1.1.1.1") =>
     app(new Request(BASE + path, { ...init, headers: { "content-type": "application/json", "cf-connecting-ip": ip, ...(init.headers || {}) } }));
   const as = (who: string, path: string, body?: unknown) =>
@@ -228,6 +230,11 @@ Deno.test("accounts off: routes answer 503 when no Auth is wired", async () => {
   assertEquals(r.status, 503);
 });
 
+Deno.test("web chat: the account page says whether the chat is open (ads only run while it is)", async () => {
+  assertEquals((await (await mk().as("ana", "/account/me")).json()).chat_open, false);
+  assertEquals((await (await mk({ chat: true }).as("ana", "/account/me")).json()).chat_open, true);
+});
+
 Deno.test("web chat: 503 until a model is wired, then replies; capped per account per day", async () => {
   assertEquals((await mk().as("ana", "/account/chat", { messages: [{ role: "user", content: "hi" }] })).status, 503);
   const t = mk({ chat: true, chatPerDay: 2 });
@@ -240,26 +247,27 @@ Deno.test("web chat: 503 until a model is wired, then replies; capped per accoun
   assertEquals((await t.as("ana", "/account/chat", { messages: [{ role: "user", content: "third" }] })).status, 429);
 });
 
-Deno.test("web chat ad: credited to the account's own web earner, which is not an install", async () => {
+Deno.test("web chat views: credited to the account's own web earner, which is not an install", async () => {
   const t = mk();
   const { install_code } = await (await t.as("ana", "/account/me")).json();
-  const r = await (await t.as("ana", "/account/ad", { query: "best postgres host" })).json();
-  assert(r.id && r.ad && r.ad.sponsored);
-  const row = t.store.ads.get(r.id)!;
-  const web = t.store.earners.get(row.earner_id as string);
-  assertEquals(web.ref, "web-app");
-  assertEquals(web.account_id, [...t.store.accounts.values()][0].id);
-  const r2 = await (await t.as("ana", "/account/ad", { query: "another" })).json();
-  assertEquals(t.store.ads.get(r2.id)!.earner_id, row.earner_id, "one web earner per account");
+  const view = (who: string, rid: string) => t.as(who, "/account/impression", { network: "velocity", request_id: rid });
+  await view("ana", "aaaaaaaa-0000-0000-0000-000000000001");
+  await view("ana", "aaaaaaaa-0000-0000-0000-000000000002");
+  const rows = [...t.store.ads.values()].filter((a) => a.provider === "velocity");
+  assertEquals(rows.length, 2);
+  assertEquals(rows[0].earner_id, rows[1].earner_id, "one web earner per account");
+  assertEquals(t.store.earners.get(rows[0].earner_id as string).ref, "web-app");
   const j = await (await t.as("ana", "/account/me")).json();
   assertEquals(j.installs, 0, "the web earner is not an install");
   assertEquals(j.installed, false);
   // It doesn't use up an install slot either.
   const t2 = mk({ program: { max_installs_per_account: 1 } });
   const { install_code: c2 } = await (await t2.as("bo", "/account/me")).json();
-  await t2.as("bo", "/account/ad", { query: "x" });
+  await t2.as("bo", "/account/impression", { network: "velocity", request_id: "bbbbbbbb-0000-0000-0000-000000000001" });
   assertEquals((await t2.link(await t2.earner(), c2)).status, 200);
   assert(install_code);
+  // The web app never gets a house ad: that route is gone.
+  assertEquals((await t.as("ana", "/account/ad", { query: "x" })).status, 404);
 });
 
 Deno.test("welcome email: a failed send is retried on the next visit, then never again", async () => {
@@ -268,4 +276,52 @@ Deno.test("welcome email: a failed send is retried on the next visit, then never
   await t.as("ana", "/account/me");
   assertEquals(t.mail.filter((m) => m.tag === "welcome").length, 2, "retried after the failure");
   assertEquals([...t.store.accounts.values()][0].welcome_sent_at, null);
+});
+
+Deno.test("web chat Velocity view: counted once per request id and credited to the account's web earner", async () => {
+  const t = mk();
+  const view = (who: string, body: unknown, headers: Record<string, string> = {}) =>
+    t.call("/account/impression", { method: "POST", body: JSON.stringify(body), headers: { authorization: `Bearer ${jwt(who)}`, ...headers } });
+  const ok = { network: "velocity", request_id: "6a9e9ccd-f98f-467e-8992-e91680f8a249", ad_id: "f63945d0c0ae-0" };
+  assertEquals((await t.call("/account/impression", { method: "POST", body: JSON.stringify(ok) })).status, 401, "needs a session");
+  assertEquals((await view("ana", { ...ok, network: "idlen" })).status, 400, "only client-fetched networks");
+  assertEquals((await view("ana", { ...ok, request_id: "x" })).status, 400);
+  const r = await (await view("ana", ok)).json();
+  assertEquals(r, { ok: true, counted: true, credited: true });
+  const row = [...t.store.ads.values()].find((a) => a.provider === "velocity")!;
+  assertEquals(row.site_key, "vibedough-app");
+  assertEquals(row.tracking.requestId, ok.request_id);
+  const web = t.store.earners.get(row.earner_id as string);
+  assertEquals(web.ref, "web-app");
+  assertEquals(web.account_id, [...t.store.accounts.values()][0].id);
+  assertEquals((await (await view("ana", ok)).json()).duplicate, true, "the same request id never counts twice");
+  // Local development counts nothing.
+  const dev = await (await view("bo", { ...ok, request_id: "11111111-2222-3333-4444-555555555555" }, { origin: "http://localhost:8000" })).json();
+  assertEquals(dev.sandbox, true);
+  // The account page hands the web chat an opaque id for the network, never the email.
+  const me = await (await t.as("ana", "/account/me")).json();
+  assertMatch(me.ad_user_id, /^[0-9a-f]{32}$/);
+  assert(!me.ad_user_id.includes("ana"));
+});
+
+Deno.test("web chat: stops for the month at the dollar cap, and ads stop with it", async () => {
+  const t = mk({ chat: true, chatCap: 1, replyCost: 0.4 });
+  const say = (text: string) => t.as("ana", "/account/chat", { messages: [{ role: "user", content: text }] });
+  assertEquals((await say("one")).status, 200);
+  assertEquals((await say("two")).status, 200); // $0.80 spent
+  assertEquals((await (await t.as("ana", "/account/me")).json()).chat_open, true);
+  assertEquals((await say("three")).status, 200); // $1.20: over the cap from here on
+  const r = await say("four");
+  assertEquals(r.status, 503);
+  assertMatch((await r.json()).error, /paused until the 1st/);
+  assertEquals((await (await t.as("ana", "/account/me")).json()).chat_open, false, "no sponsored lines while the chat is paused");
+});
+
+Deno.test("chat cost: Haiku 5.5 list prices, long prompts at the higher tier, rounded up", async () => {
+  const { chatCost, CHAT_MODEL } = await import("../supabase/functions/goodwait/chat.ts");
+  assertEquals(CHAT_MODEL, "claude-haiku-5-5");
+  assertEquals(chatCost({ input_tokens: 1_000_000, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.5); // over 100K: $0.50/M
+  assertEquals(chatCost({ input_tokens: 10_000, output_tokens: 1_000, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.0015); // $0.001 + $0.0005
+  assertEquals(chatCost({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 8_000, cache_read_tokens: 10_000 }), 0.0011); // 8K x 0.125 + 10K x 0.01
+  assertEquals(chatCost({ input_tokens: 1, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.000001, "never rounds down to free");
 });

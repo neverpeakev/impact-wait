@@ -250,6 +250,14 @@ export function pgStore(dbUrl: string): Store {
     async touchEarner(earnerId) {
       await sql`update impact_wait.earners set last_seen_at = now() where id = ${earnerId} and (last_seen_at is null or last_seen_at < now() - interval '5 minutes')`;
     },
+    async chatSpendSince(since) {
+      const [r] = await sql`select coalesce(sum(cost_usd), 0)::float8 as usd from impact_wait.chat_usage where created_at >= ${since}`;
+      return Number(r.usd);
+    },
+    async recordChatUsage(row) {
+      await sql`insert into impact_wait.chat_usage (account_id, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, cost_usd)
+        values (${row.account_id}, ${row.model}, ${row.input_tokens}, ${row.output_tokens}, ${row.cache_write_tokens}, ${row.cache_read_tokens}, ${row.cost_usd})`;
+    },
     async rateCount(kind, key, seconds) {
       const [r] = await sql`select count(*)::int as n from impact_wait.rate_events where kind = ${kind} and key = ${key} and created_at > now() - make_interval(secs => ${seconds})`;
       return r.n;
@@ -286,7 +294,7 @@ export function pgStore(dbUrl: string): Store {
 export async function loadVaultKeys(dbUrl: string): Promise<Record<string, string>> {
   const sql = postgres(dbUrl, { max: 1, prepare: false, idle_timeout: 5 });
   try {
-    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key', 'impact_wait_resend_key', 'impact_wait_anthropic_key')`;
+    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key', 'impact_wait_resend_key', 'impact_wait_anthropic_key', 'impact_wait_anthropic_workspace')`;
     const out: Record<string, string> = {};
     for (const r of rows as any[]) if (r.decrypted_secret) out[String(r.name).replace(/^impact_wait_|_key$/g, "")] = String(r.decrypted_secret).trim();
     return out;

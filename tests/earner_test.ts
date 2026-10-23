@@ -63,15 +63,20 @@ Deno.test("credit: a paid, counted impression is credited to the earner", async 
   assertEquals(m.est_pending_usd, null); // no estimate unless an eCPM is configured
 });
 
-Deno.test("credit: house ads, sandbox and unknown tokens never credit, but the ad still serves", async () => {
-  let t = mk({ fill: false });
-  let { token } = await (await t.signup()).json();
-  const house = await t.view(token);
-  assertEquals(house.ad.provider, "house");
-  assertEquals(house.ev.credited, false);
+Deno.test("no paid fill: earners and the plugin get no ad at all, never a house ad; other sites still get one", async () => {
+  const t = mk({ fill: false });
+  const { token } = await (await t.signup()).json();
+  const j = await t.ad(token);
+  assertEquals([j.id, j.ad], [null, null]);
+  assertEquals((await t.ad()).ad, null, "the plugin's site without a token too");
+  assertEquals(t.store.ads.size, 0, "nothing recorded");
+  const other = await (await t.call("/ad", { method: "POST", body: JSON.stringify({ site: "demo", query: "best postgres host" }) })).json();
+  assertEquals(other.ad.provider, "house");
+});
 
-  t = mk();
-  ({ token } = await (await t.signup()).json());
+Deno.test("credit: sandbox and unknown tokens never credit, but the ad still serves", async () => {
+  const t = mk();
+  let { token } = await (await t.signup()).json();
   const sandbox = await t.ad(token, "http://localhost:3000");
   assertEquals(sandbox.sandbox, true);
   assertEquals(t.store.ads.get(sandbox.id)!.earner_id, null);

@@ -214,32 +214,27 @@ Deno.test("embed.js: serves the web component as JavaScript", async () => {
   assert((await r.text()).includes('customElements.define("good-wait"'));
 });
 
-Deno.test("brand safety: every paying ad shows (even thin creatives); only sensitive categories are blocked", async () => {
+Deno.test("ad checks: every paying ad shows, any category or thin creative; only a missing https link is refused", async () => {
   const { safetyReason } = await import("../supabase/functions/goodwait/networks.ts");
   const base = { provider: "idlen", live: true, label: "Sponsored", brand: "Neon", headline: "Serverless Postgres", body: "Scale to zero", cta: "Try", clickUrl: "https://neon.tech/?x=1", tracking: {} };
   assertEquals(safetyReason(base), null);
   assertEquals(safetyReason({ ...base, brand: "STUDENT", headline: "Just launched \u2014 built for developers", body: "See what's new and try it where you already work.", clickUrl: "https://www.linkedin.com/x" }), null);
   assertEquals(safetyReason({ ...base, brand: "Saadullah", headline: "ToolNest \u2013 Free Online Tools for Everyone", clickUrl: "https://freetoolnest.vercel.app/" }), null);
   assertEquals(safetyReason({ ...base, brand: "acme", headline: "boost your revenue" }), null);
-  assertEquals(safetyReason({ ...base, headline: "Best online casino bonus" }), "sensitive category");
-  assertEquals(safetyReason({ ...base, clickUrl: "https://vape-deals.shop/?cbd=1" }), "sensitive category");
+  assertEquals(safetyReason({ ...base, headline: "Best online casino bonus" }), null);
+  assertEquals(safetyReason({ ...base, clickUrl: "https://vape-deals.shop/?cbd=1" }), null);
+  assertEquals(safetyReason({ ...base, brand: "Hi-Snaps", headline: "Hi-Snaps premium hemp edibles" }), null);
   assertEquals(safetyReason({ ...base, clickUrl: "" }), "no https landing page");
 });
 
-Deno.test("brand safety: a sensitive Idlen fill loses to AdMesh, and alone falls back to the house ad; a thin Idlen fill still wins", async () => {
+Deno.test("ad checks: an Idlen fill in any category wins over AdMesh (no category filter)", async () => {
   const idlenAd = (title: string) => ({ success: true, ad: { ad_id: "x", title, body: "b", advertiser_name: "capilorix", cta_url: "https://capilorix.store/", impression_token: "t", publisher_id: "p", request_id: "r" } });
   const t = mk({ admesh: true });
   const base = t.s.f;
-  let title = "Best online casino bonus";
-  const f: typeof fetch = async (input, init) => String(input).endsWith("/v1/serve") ? new Response(JSON.stringify(idlenAd(title)), { headers: { "Content-Type": "application/json" } }) : base(input, init);
+  const f: typeof fetch = async (input, init) => String(input).endsWith("/v1/serve") ? new Response(JSON.stringify(idlenAd("Best online casino bonus")), { headers: { "Content-Type": "application/json" } }) : base(input, init);
   const { createApp } = await import("../supabase/functions/goodwait/app.ts");
   const ask = (keys: Record<string, string>, ip: string) => createApp({ store: t.store, keys, baseUrl: BASE, salt: "t", fetch: f })(new Request(BASE + "/ad", { method: "POST", headers: { "content-type": "application/json", origin: "https://chat.acme.dev", "x-forwarded-for": ip }, body: JSON.stringify({ site: "demo", query: "crm for startups", debug: true }) }));
   const j1 = await (await ask({ idlen: "idl_pk_x", admesh: "sk_x" }, "8.8.8.8")).json();
-  assertEquals(j1.ad.provider, "admesh");
-  assert(j1.attempts.some((a: any) => a.provider === "idlen" && a.result === "filtered" && a.note === "sensitive category"));
-  const j2 = await (await ask({ idlen: "idl_pk_x" }, "9.9.9.9")).json();
-  assertEquals(j2.ad.provider, "house");
-  title = "Just launched \u2014 built for developers";
-  const j3 = await (await ask({ idlen: "idl_pk_x", admesh: "sk_x" }, "7.7.7.7")).json();
-  assertEquals(j3.ad.provider, "idlen");
+  assertEquals(j1.ad.provider, "idlen");
+  assert(!j1.attempts.some((a: any) => a.result === "filtered"));
 });
