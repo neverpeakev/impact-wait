@@ -52,15 +52,7 @@ button.go[disabled]{opacity:.7;cursor:progress}
 .chips label{display:inline-flex;align-items:center;gap:6px;font-size:15px;background:#fff;border:1.5px solid #B9C4DA;border-radius:999px;padding:7px 13px;cursor:pointer}
 .chips input{accent-color:var(--cobalt)}
 .chips label:has(input:checked){border-color:var(--cobalt);background:#E6ECFB}
-.pwrow{display:flex;gap:10px;max-width:480px;margin-top:12px}
-.pwrow .field{position:relative;flex:1;min-width:0}
-.pwrow input{width:100%;font:inherit;font-size:17px;padding:14px 64px 14px 16px;border:1.5px solid #B9C4DA;border-radius:var(--radius);background:#fff;color:var(--ink)}
-.pwrow input:focus{border-color:var(--cobalt);outline:none;box-shadow:0 0 0 3px rgba(43,80,200,.18)}
-.pwrow .show{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:600 14px/1 "Public Sans",sans-serif;background:none;border:0;color:var(--cobalt);padding:8px;cursor:pointer}
-form.join input[readonly]{background:var(--linen-2);color:var(--ink-soft)}
-.pwlabel{display:block;font-weight:600;font-size:15px;margin-top:16px}
 .linkbtn{background:none;border:0;padding:0;font:inherit;font-size:14px;color:var(--ink-soft);text-decoration:underline;cursor:pointer}
-@media (max-width:520px){.pwrow{flex-direction:column}}
 button.save{font:600 15px/1 "Public Sans",sans-serif;padding:10px 16px;border-radius:var(--radius);border:1.5px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
 
 /* The one bold thing: a terminal mid-thought. */
@@ -147,7 +139,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12.5 12.5 8.5 4.5l6.2 5.2Z" fill="#14213D"/><path d="M19.5 12.5l4-8-6.2 5.2Z" fill="#14213D"/><path d="M9.5 13.5c1.6-1.4 4-2 6.5-2s4.9.6 6.5 2c3 2.6 4.6 6.2 4 9.3-.6 3.2-4.6 5.2-10.5 5.2S6.1 26 5.5 22.8c-.6-3.1 1-6.7 4-9.3Z" fill="#2B50C8"/><ellipse cx="16" cy="11.2" rx="3.2" ry="2.1" fill="#B8892B"/></svg>
       vibedough
     </a>
-    <a class="top-cta" href="#join-final">Get early access</a>
+    <a class="top-cta" href="#join-final" id="top-cta">Get early access</a>
   </header>
 
   <main>
@@ -251,8 +243,17 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const VARIANT = "give";
   const ADS = [["Lumen DB","Postgres that sleeps when you do.","Try it"],["Shipyard","A preview deploy for every branch.","Start free"],["Tracewell","Find the slow query before your users do.","See demo"],["Inkpad","Docs your whole team actually updates.","Try it"]];
   const METERS = [["Raised for your cause","$40.12","16,715 views so far"],["Raised for your cause","$40.12","16,716 views so far"],["Raised for your cause","$40.12","16,717 views so far"],["Raised for your cause","$40.12","16,718 views so far"],["Raised for your cause","$40.13","16,719 views so far"]];
-  const AUTH = "https://mvnfgrydpdwaatkcsrdd.supabase.co/auth/v1", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12bmZncnlkcGR3YWF0a2NzcmRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4NTIyMzUsImV4cCI6MjA3MjQyODIzNX0.vPKEZnj8ACjfXpO7ueUvcKT1wBO0-JM-UwcOEvmqXRk";
-  const ACCOUNTS = false || new URLSearchParams(location.search).get("acct") === "1";
+  const acctParam = new URLSearchParams(location.search).get("acct");
+  const ACCOUNTS = acctParam === "1" || (true && acctParam !== "0");
+  // Signed in already: the header goes to the dashboard. Otherwise it opens the sign-in popup.
+  const top = document.getElementById("top-cta");
+  if (ACCOUNTS && top) {
+    let had = false;
+    try { had = !!localStorage.getItem("vd_session"); } catch (_) {}
+    top.textContent = had ? "Your dashboard" : "Sign in";
+    top.href = "/app";
+    if (!had) top.addEventListener("click", (e) => { if (window.VD) { e.preventDefault(); VD.openSignIn({ title: "Sign in to Vibedough", sub: "New here? This creates your free account." }); } });
+  }
 
   let session = "";
   try { session = sessionStorage.getItem("kn_s") || ""; } catch (_) {}
@@ -309,58 +310,10 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
     }));
   }
 
-  // Account step: the password field appears under the email they just gave.
-  function showPassword(form) {
-    const box = form.parentElement;
-    const input = form.querySelector("input[type=email]");
-    input.readOnly = true;
-    form.querySelector("button.go").hidden = true;
-    const id = "pw-" + (box.id || "x");
-    const wrap = document.createElement("form");
-    wrap.className = "pwform"; wrap.noValidate = true;
-    wrap.innerHTML = '<label class="pwlabel" for="' + id + '">Create a password</label>' +
-      '<div class="pwrow"><div class="field"><input id="' + id + '" type="password" minlength="10" required autocomplete="new-password" aria-describedby="' + id + '-hint">' +
-      '<button type="button" class="show" aria-controls="' + id + '">Show</button></div>' +
-      '<button class="go" type="submit">Create account</button></div>' +
-      '<p class="msg" role="alert" aria-live="polite"></p>' +
-      '<p class="micro" id="' + id + '-hint">At least 10 characters. We\'ll email you a link to confirm your account. <button type="button" class="linkbtn skip">Skip for now</button></p>';
-    form.after(wrap);
-    box.querySelectorAll(":scope > .msg, :scope > .micro").forEach((n) => (n.hidden = true));
-    const pw = wrap.querySelector("input"), show = wrap.querySelector(".show"), msg = wrap.querySelector(".msg"), btn = wrap.querySelector("button.go");
-    pw.focus();
-    show.addEventListener("click", () => { const on = pw.type === "password"; pw.type = on ? "text" : "password"; show.textContent = on ? "Hide" : "Show"; });
-    wrap.querySelector(".skip").addEventListener("click", showDone);
-    wrap.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      msg.textContent = ""; msg.classList.remove("err");
-      if (pw.value.length < 10) { msg.textContent = "Use at least 10 characters."; msg.classList.add("err"); pw.focus(); return; }
-      btn.disabled = true; btn.textContent = "Creating…";
-      try {
-        const r = await fetch(AUTH + "/signup?redirect_to=" + encodeURIComponent(location.origin + "/try/welcome"), {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: ANON, authorization: "Bearer " + ANON },
-          body: JSON.stringify({ email, password: pw.value, data: { product: "vibedough", variant: VARIANT, utm } }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          const code = j.error_code || j.code || "";
-          throw new Error(code === "weak_password" ? "That password is too easy to guess. Try a longer one."
-            : code === "over_email_send_rate_limit" || r.status === 429 ? "Too many sign-ups right now. Try again in a few minutes."
-            : j.msg || j.error_description || "We couldn't create your account. Try again in a minute.");
-        }
-        pw.value = "";
-        document.querySelectorAll(".joinbox").forEach((b) => {
-          b.innerHTML = '<div class="done" role="status"><h3>Check your inbox.</h3><p>We sent a link to <b></b>. Click it to finish creating your account.</p>' +
-            '<p class="micro">No email in a few minutes? Check spam, or <button type="button" class="linkbtn again">use a different email</button>.</p></div>';
-          b.querySelector("b").textContent = email;
-          b.querySelector(".again").addEventListener("click", () => location.reload());
-        });
-      } catch (err) {
-        msg.textContent = err.message && err.message !== "Failed to fetch" ? err.message : "Couldn't reach us. Check your connection and try again.";
-        msg.classList.add("err");
-        btn.disabled = false; btn.textContent = "Create account";
-      }
-    });
+  // Account step: the popup sends their sign-in link right away; the 6-digit code works there too.
+  function openAccount() {
+    if (!window.VD) return;
+    VD.openSignIn({ email, autoSend: true, title: "Create your account", sub: "Free. One tap to confirm your email, then one line to install." });
   }
 
   document.querySelectorAll("form.join").forEach((form) => form.addEventListener("submit", async (e) => {
@@ -374,7 +327,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "Something went wrong on our side. Try again in a minute.");
       email = input.value.trim().toLowerCase();
-      if (ACCOUNTS) showPassword(form); else showDone();
+      showDone();
+      if (ACCOUNTS) openAccount();
     } catch (err) {
       msg.textContent = err.message && err.message !== "Failed to fetch" ? err.message : "Couldn't reach us. Check your connection and try again.";
       msg.classList.add("err");
@@ -383,5 +337,6 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   }));
 })();
 </script>
+<script src="/auth.js" defer></script>
 </body>
 </html>

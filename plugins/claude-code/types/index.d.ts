@@ -81,6 +81,8 @@ export type GoodwaitEarner = {
   referral_earned_usd?: number
   auto_exit?: 'cash' | 'donate'
   cash_out_from?: string | null
+  // Whether this install is linked to a vibedough.com account (servers before accounts leave it out).
+  account_linked?: boolean
   draw?: { name: string; prize_usd: number; closes_at: string; rules_url: string | null; entries: number } | null
   fetchedAt: number
 }

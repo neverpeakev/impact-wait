@@ -1,6 +1,7 @@
 // Postgres-backed Store. Tables live in the private impact_wait schema (not exposed via the REST API).
 import postgres from "npm:postgres@3.4.5";
 import type { AdRow, Draw, EarnerSummary, Impact, Ledger, Program, Store } from "./app.ts";
+import { type Account, type Install, type TaxFormSummary, WEB_EARNER_REF } from "./accounts.ts";
 
 export function pgStore(dbUrl: string): Store {
   const sql = postgres(dbUrl, { max: 3, prepare: false, idle_timeout: 20 });
@@ -49,7 +50,8 @@ export function pgStore(dbUrl: string): Store {
     },
     async program() {
       const [r] = await sql`select user_share_pct::float8 as user_share_pct, est_ecpm_usd::float8 as est_ecpm_usd, min_payout_usd::float8 as min_payout_usd,
-        daily_cap, min_gap_seconds, max_earners_per_ip_day, referral_pct::float8 as referral_pct, hold_days from impact_wait.program where id = 1`;
+        daily_cap, min_gap_seconds, max_earners_per_ip_day, referral_pct::float8 as referral_pct, hold_days,
+        earnings_need_payout_info, max_installs_per_account from impact_wait.program where id = 1`;
       return r as unknown as Program;
     },
     async earnersFromIp(ipHash, seconds) {
@@ -148,6 +150,113 @@ export function pgStore(dbUrl: string): Store {
     async setPayoutEmail(earnerId, email) {
       await sql`update impact_wait.earners set payout_email = ${email} where id = ${earnerId}`;
     },
+    async ensureAccount(row) {
+      // Almost every call is a returning account with the same email: one read and done.
+      const [have] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where user_id = ${row.user_id}`;
+      if (have && have.email === row.email) return { account: have as unknown as Account, created: false };
+      // The install code comes from the column default; a rare collision just retries.
+      for (let i = 0; ; i++) {
+        try {
+          const made = await sql`insert into impact_wait.accounts (user_id, email, provider, source)
+            values (${row.user_id}, ${row.email}, ${row.provider}, ${row.source ? sql.json(row.source as any) : null})
+            on conflict (user_id) do nothing
+            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at`;
+          if (made[0]) return { account: made[0] as unknown as Account, created: true };
+          // Writes only when the sign-in email changed; the account page polls this.
+          const [moved] = await sql`update impact_wait.accounts set email = ${row.email}, updated_at = now() where user_id = ${row.user_id} and email is distinct from ${row.email}
+            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at`;
+          const [a] = moved ? [moved] : await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where user_id = ${row.user_id}`;
+          return { account: a as unknown as Account, created: false };
+        } catch (e) {
+          if (i < 3 && (e as { code?: string; constraint_name?: string }).code === "23505" && /install_code/.test(String((e as { constraint_name?: string }).constraint_name))) continue;
+          throw e;
+        }
+      }
+    },
+    async claimWelcome(accountId) {
+      const rows = await sql`update impact_wait.accounts set welcome_sent_at = now() where id = ${accountId} and welcome_sent_at is null returning id`;
+      return rows.length === 1;
+    },
+    async releaseWelcome(accountId) {
+      await sql`update impact_wait.accounts set welcome_sent_at = null where id = ${accountId}`;
+    },
+    async installs(accountId) {
+      const rows = await sql`select id as earner_id, case when ref = ${WEB_EARNER_REF} then 'web' else 'install' end as kind, linked_at, last_seen_at
+        from impact_wait.earners where account_id = ${accountId} order by linked_at`;
+      return rows as unknown as Install[];
+    },
+    async taxForm(accountId) {
+      const [r] = await sql`select tin_type, tin_last4, legal_name, signed_at from impact_wait.tax_forms where account_id = ${accountId}`;
+      return (r as unknown as TaxFormSummary) || null;
+    },
+    async saveTaxForm(accountId, f, ipHash, userAgent) {
+      const [r] = await sql`select impact_wait.save_tax_form(${accountId}, ${f.legal_name}, ${f.business_name}, ${f.tax_class}, ${f.line1}, ${f.city}, ${f.state}, ${f.zip},
+        ${f.tin_type}, ${f.tin}, ${f.signed_name}, ${ipHash}, ${userAgent || null}) as last4`;
+      return r.last4;
+    },
+    async setAccountPaypal(accountId, email) {
+      await sql.begin(async (tx: any) => {
+        await tx`update impact_wait.accounts set paypal_email = ${email}, updated_at = now() where id = ${accountId}`;
+        await tx`update impact_wait.earners set payout_email = ${email} where account_id = ${accountId}`;
+      });
+    },
+    async rotateInstallCode(accountId) {
+      for (let i = 0; ; i++) {
+        try {
+          const [r] = await sql`update impact_wait.accounts set install_code = impact_wait.new_install_code(), updated_at = now() where id = ${accountId} returning install_code`;
+          return r.install_code;
+        } catch (e) {
+          if (i < 3 && (e as { code?: string }).code === "23505") continue;
+          throw e;
+        }
+      }
+    },
+    async findAccountByCode(code) {
+      const [r] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where install_code = ${code}`;
+      return (r as unknown as Account) || null;
+    },
+    async linkEarner(earnerId, accountId, maxInstalls) {
+      // Serialized per account so two installs linking at once can't both slip under the cap.
+      return await sql.begin(async (tx: any) => {
+        await tx`select pg_advisory_xact_lock(hashtext(${"acct:" + accountId}))`;
+        const [e] = await tx`select account_id from impact_wait.earners where id = ${earnerId}`;
+        if (e.account_id === accountId) return "linked";
+        if (e.account_id) return "other";
+        const [c] = await tx`select count(*)::int as n from impact_wait.earners where account_id = ${accountId} and ref is distinct from ${WEB_EARNER_REF}`;
+        if (c.n >= maxInstalls) return "full";
+        await tx`update impact_wait.earners e set account_id = ${accountId}, linked_at = now(),
+            payout_email = coalesce((select a.paypal_email from impact_wait.accounts a where a.id = ${accountId}), e.payout_email)
+          where e.id = ${earnerId}`;
+        return "linked";
+      });
+    },
+    async webEarner(accountId, ipHash) {
+      return await sql.begin(async (tx: any) => {
+        await tx`select pg_advisory_xact_lock(hashtext(${"acct:" + accountId}))`;
+        const [have] = await tx`select id from impact_wait.earners where account_id = ${accountId} and ref = ${WEB_EARNER_REF} limit 1`;
+        if (have) return have.id;
+        // No token exists for this earner: the hash is of random bytes nobody holds, so it can't be presented.
+        const junk = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
+        const [made] = await tx`insert into impact_wait.earners (token_hash, ip_hash, ref, account_id, linked_at, payout_email)
+          values (${"web:" + junk}, ${ipHash}, ${WEB_EARNER_REF}, ${accountId}, now(), (select paypal_email from impact_wait.accounts where id = ${accountId}))
+          returning id`;
+        return made.id;
+      });
+    },
+    async earnerAccount(earnerId) {
+      const [r] = await sql`select account_id from impact_wait.earners where id = ${earnerId}`;
+      return r ? r.account_id : null;
+    },
+    async touchEarner(earnerId) {
+      await sql`update impact_wait.earners set last_seen_at = now() where id = ${earnerId} and (last_seen_at is null or last_seen_at < now() - interval '5 minutes')`;
+    },
+    async rateCount(kind, key, seconds) {
+      const [r] = await sql`select count(*)::int as n from impact_wait.rate_events where kind = ${kind} and key = ${key} and created_at > now() - make_interval(secs => ${seconds})`;
+      return r.n;
+    },
+    async rateHit(kind, key) {
+      await sql`insert into impact_wait.rate_events (kind, key) values (${kind}, ${key})`;
+    },
     async stats(site) {
       const [t] = await sql`select coalesce(sum(sponsored_waits),0)::bigint as sponsored_waits, coalesce(sum(paid_waits),0)::bigint as paid_waits, coalesce(sum(clicks),0)::bigint as clicks, count(*) filter (where sponsored_waits > 0)::int as sites from impact_wait.site_totals`;
       const lb = await sql`select t.site_key, s.name, t.sponsored_waits::bigint from impact_wait.site_totals t join impact_wait.sites s using (site_key) where s.active and t.sponsored_waits > 0 order by t.sponsored_waits desc limit 10`;
@@ -177,7 +286,7 @@ export function pgStore(dbUrl: string): Store {
 export async function loadVaultKeys(dbUrl: string): Promise<Record<string, string>> {
   const sql = postgres(dbUrl, { max: 1, prepare: false, idle_timeout: 5 });
   try {
-    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key')`;
+    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key', 'impact_wait_resend_key', 'impact_wait_anthropic_key')`;
     const out: Record<string, string> = {};
     for (const r of rows as any[]) if (r.decrypted_secret) out[String(r.name).replace(/^impact_wait_|_key$/g, "")] = String(r.decrypted_secret).trim();
     return out;

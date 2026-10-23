@@ -26,6 +26,11 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 // the network actually paid. /earn shows the balance; /earn paypal <email>
 // sets where payouts go.
 //
+// Accounts: a vibedough.com account (web sign-in) can own this install. The
+// account page shows an install code (VD-XXXX-XXXX); `/earn link <code>`, or
+// the Account code setting (the one-line install sets it), joins this install
+// to that account, so its earnings, PayPal email and W-9 live in one place.
+//
 // Long turns: while Claude keeps working, a fresh ad replaces the shown one
 // every 15 seconds (the rotate setting), at most 16 times a turn, and only while
 // the person is around: within 2 minutes (the presence setting) of their last
@@ -43,9 +48,10 @@ import type { GoodwaitAd, GoodwaitCurrent, GoodwaitEarner, GoodwaitExternal, Goo
 // What leaves the machine: the first 500 characters of the prompt, the site
 // key and a random per-session id, sent to the Goodwait API to pick one
 // matching line. Nothing else. The site key defaults to "claude-code" (the
-// manifest default; the code falls back to "sandbox" only when the option is
-// missing entirely). With site "sandbox" the API serves a house ad and counts
-// nothing.
+// manifest default, and the fallback when the option is missing, as it can be
+// after a one-line `claude plugin install` that sets only the account code).
+// A malformed site key falls back to "sandbox". With site "sandbox" the API
+// serves a house ad and counts nothing.
 
 const DEFAULT_ENDPOINT = 'https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/goodwait'
 const HOME = 'https://impact-wait.vercel.app'
@@ -65,6 +71,11 @@ const MILESTONES = [10, 50, 100, 250, 500, 1000]
 const EARNER_KEY = 'goodwait.earner'
 const TOKEN_RE = /^gw_[0-9a-f]{64}$/
 const EARN_REF = 'claude-code-mod'
+// The install code a vibedough.com account shows: VD- and 8 characters without look-alikes.
+const ACCOUNT_CODE_RE = /^VD-[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/
+// The account code this install last tried to link from settings, so a bad code is tried once, not every session.
+const LINK_TRIED_KEY = 'goodwait.linkTried'
+const ACCOUNT_HOME = 'https://vibedough.com/app'
 const VELOCITY_GW = 'https://gw.vlcapi.net'
 const VELOCITY_KEY = 'b9fb08c9ea6c' // Never Peak's Velocity publisher key (a public client id)
 const VELOCITY_TIMEOUT_MS = 2500
@@ -83,7 +94,15 @@ const sessionPaid = atom({ plugin: 'goodwait', key: 'sessionPaid' } as const, 0)
 const stats = atom({ plugin: 'goodwait', key: 'stats' } as const, null)
 const earner = atom({ plugin: 'goodwait', key: 'earner' } as const, null)
 
-type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number; velocityAdUnit: string; velocitySiteUrl: string; invite: string }
+type Config = { site: string; endpoint: string; ecpm: number; rotateSeconds: number; presenceSeconds: number; velocityAdUnit: string; velocitySiteUrl: string; invite: string; accountCode: string }
+
+// What people paste: any case, with or without dashes or spaces. Null when it can't be a code.
+function normalizeAccountCode(raw: unknown): string | null {
+  const m = String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').match(/^VD([A-Z0-9]{8})$/)
+  if (!m?.[1]) return null
+  const code = `VD-${m[1].slice(0, 4)}-${m[1].slice(4)}`
+  return ACCOUNT_CODE_RE.test(code) ? code : null
+}
 
 // Module state. A hot reload starts it over, which is fine: it only tracks
 // the turn in flight and the timers that belong to it.
@@ -230,7 +249,38 @@ async function ensureEarner($: EngineInterface, cfg: Config) {
     await $.store.set(EARNER_KEY, { id: j.earner_id, token: j.token })
     $.ui.toast(`You now earn ${j.share_pct ?? 50}% of the ad revenue from your waits. /earn to see it.`, { timeoutMs: 8000 })
   }
-  await fetchEarner($, cfg)
+  const me = await fetchEarner($, cfg)
+  // The Account code setting links this install once; a code that failed is not retried until it changes.
+  if (cfg.accountCode && me && me.account_linked === false && (await $.store.get(LINK_TRIED_KEY)) !== cfg.accountCode) {
+    await $.store.set(LINK_TRIED_KEY, cfg.accountCode)
+    const r = await linkAccount($, cfg, cfg.accountCode)
+    $.ui.toast(r.text, { timeoutMs: 8000 })
+  }
+}
+
+// Joins this install to the vibedough.com account that owns `code`.
+async function linkAccount($: EngineInterface, cfg: Config, code: string): Promise<{ ok: boolean; text: string }> {
+  if (!earnerToken) return { ok: false, text: 'Earning is not set up on this install yet. Try again in a minute.' }
+  let res
+  try {
+    res = await postEarner($, cfg, '/earner/link', { code })
+  } catch {
+    return { ok: false, text: 'Could not reach the server. Try again in a minute.' }
+  }
+  let j: { email?: string; error?: string } = {}
+  try {
+    j = JSON.parse(res.text)
+  } catch {
+    // fall through to the status messages
+  }
+  if (res.ok) {
+    fire(fetchEarner($, cfg))
+    return { ok: true, text: `Linked to your Vibedough account${j.email ? ` (${j.email})` : ''}. Your earnings show at ${ACCOUNT_HOME}.` }
+  }
+  if (res.status === 404) return { ok: false, text: `That install code doesn't match an account. Copy it again from ${ACCOUNT_HOME}.` }
+  if (res.status === 409) return { ok: false, text: j.error ? `Not linked: ${j.error}.` : 'Not linked: this install already belongs to another account.' }
+  if (res.status === 429) return { ok: false, text: 'Too many tries. Wait an hour, then try again.' }
+  return { ok: false, text: 'Could not link right now. Try again in a minute.' }
 }
 
 async function fetchEarner($: EngineInterface, cfg: Config): Promise<GoodwaitEarner | null> {
@@ -634,7 +684,7 @@ async function openInBrowser($: EngineInterface, url: string) {
 // --------------------------------------------------------------- register
 
 export const register: Register = (on, options) => {
-  const rawSite = String(options.site ?? 'sandbox').trim().toLowerCase()
+  const rawSite = String(options.site || 'claude-code').trim().toLowerCase()
   const cfg: Config = {
     site: SITE_RE.test(rawSite) ? rawSite : 'sandbox',
     endpoint: String(options.endpoint || DEFAULT_ENDPOINT).replace(/\/+$/, ''),
@@ -653,6 +703,8 @@ export const register: Register = (on, options) => {
     velocitySiteUrl: /^https:\/\/[^\s]+$/i.test(String(options.velocitySiteUrl ?? '')) ? String(options.velocitySiteUrl) : 'https://impact-wait.vercel.app',
     // A friend's invite code, used once at sign-up.
     invite: /^[a-z2-9]{8}$/.test(String(options.invite ?? '').trim().toLowerCase()) ? String(options.invite).trim().toLowerCase() : '',
+    // The vibedough.com install code, linked once on first run.
+    accountCode: normalizeAccountCode(options.accountCode) ?? '',
   }
 
   on('session.start', async ($, e, next) => {
@@ -669,7 +721,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'earn',
       description: 'Your share of the ad revenue: balance, PayPal, donate, invites.',
-      argumentHint: '[paypal you@example.com | donate [amount] | exit cash|donate | refer]',
+      argumentHint: '[link VD-XXXX-XXXX | paypal you@example.com | donate [amount] | exit cash|donate | refer]',
     })
     earnerToken = ''
     earnerId = ''
@@ -948,11 +1000,18 @@ export const register: Register = (on, options) => {
     if (d) return { text: await donate($, cfg, d[1] ?? '') }
     const x = args.match(/^exit\s+(cash|donate)$/i)
     if (x?.[1]) return { text: await setExit($, cfg, x[1].toLowerCase() as 'cash' | 'donate') }
+    const l = args.match(/^link(?:\s+(.+))?$/i)
+    if (l) {
+      const code = normalizeAccountCode(l[1] ?? '')
+      if (!code) return { text: `Use /earn link VD-XXXX-XXXX with the install code from ${ACCOUNT_HOME}.` }
+      if (!earnerToken) await ensureEarner($, cfg)
+      return { text: (await linkAccount($, cfg, code)).text }
+    }
     if (/^(refer|invite)$/i.test(args)) {
       const me = (await fetchEarner($, cfg)) ?? (await read($, earner))
       return { text: me ? referLine(me) : 'Earning is not set up on this install yet. Try again in a minute.' }
     }
-    if (args) return { text: 'Use /earn for your balance, /earn paypal you@example.com, /earn donate [amount], /earn exit cash|donate, or /earn refer.' }
+    if (args) return { text: 'Use /earn for your balance, /earn link VD-XXXX-XXXX, /earn paypal you@example.com, /earn donate [amount], /earn exit cash|donate, or /earn refer.' }
     const me = (await fetchEarner($, cfg)) ?? (await read($, earner))
     fire(refreshStats($, cfg))
     await $.ui.open({ id: PANE, title: 'Goodwait' })
@@ -961,7 +1020,8 @@ export const register: Register = (on, options) => {
     const given = me.donated_usd ? ` · ${money(me.donated_usd)} donated` : ''
     const draw = me.draw ? ` · ${num(me.draw.entries)} entries in the ${me.draw.name}` : ''
     const invite = me.referral_code ? ` · invite code ${me.referral_code}` : ''
-    return { text: `${earnerLine(me)} · ${money(me.paid_usd)} paid out${given} · ${payout}${draw}${invite}` }
+    const acct = me.account_linked === false ? ` · not linked to a Vibedough account (/earn link VD-XXXX-XXXX from ${ACCOUNT_HOME})` : ''
+    return { text: `${earnerLine(me)} · ${money(me.paid_usd)} paid out${given} · ${payout}${draw}${invite}${acct}` }
   })
 
   on('command.run', { command: 'goodwait' }, async ($, e) => {
