@@ -1,5 +1,4 @@
-// The Vibedough web chat (the phone experience): one reply per message, short and plain. This is the
-// Claude path; kimi.ts is the Kimi path (the default when a Moonshot key is set).
+// The Vibedough web chat (the phone experience): one Claude reply per message, short and plain.
 // Loaded only when /account/chat is first called, so the SDK never slows a cold start of the ad routes.
 import type Anthropic from "npm:@anthropic-ai/sdk@1.1.0";
 
@@ -7,7 +6,7 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 export type ChatReply = { text: string } | { refused: true } | { error: string };
 export type ChatFn = (turns: ChatTurn[]) => Promise<ChatReply>;
 
-export const CHAT_SYSTEM = "You are the assistant inside Vibedough, a chat app people use on their phones to plan, debug and talk through code and side projects. " +
+const SYSTEM = "You are the assistant inside Vibedough, a chat app people use on their phones to plan, debug and talk through code and side projects. " +
   "Answer in a few short paragraphs or a tight list; people are reading on a small screen. Use code blocks only for code. " +
   "If a question needs a long build, give the plan and the first step, and offer to continue.";
 
@@ -25,7 +24,7 @@ export function claudeChat(apiKey: string, model: string): ChatFn {
       const params = {
         model,
         max_tokens: 16000,
-        system: CHAT_SYSTEM,
+        system: SYSTEM,
         output_config: { effort: "low" },
         messages: turns,
         // On a policy decline, the API re-runs the request on the recommended fallback model.
