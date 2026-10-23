@@ -294,7 +294,7 @@ export function pgStore(dbUrl: string): Store {
 export async function loadVaultKeys(dbUrl: string): Promise<Record<string, string>> {
   const sql = postgres(dbUrl, { max: 1, prepare: false, idle_timeout: 5 });
   try {
-    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key', 'impact_wait_resend_key', 'impact_wait_anthropic_key')`;
+    const rows = await sql`select name, decrypted_secret from vault.decrypted_secrets where name in ('impact_wait_idlen_key', 'impact_wait_admesh_key', 'impact_wait_agentads_key', 'impact_wait_resend_key', 'impact_wait_anthropic_key', 'impact_wait_anthropic_workspace')`;
     const out: Record<string, string> = {};
     for (const r of rows as any[]) if (r.decrypted_secret) out[String(r.name).replace(/^impact_wait_|_key$/g, "")] = String(r.decrypted_secret).trim();
     return out;

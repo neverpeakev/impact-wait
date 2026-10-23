@@ -16,7 +16,11 @@ const keys: Keys = { ...fromEnv };
 // Resend key for the API's own email (sign-in links, welcome): secret RESEND_API_KEY, else Vault impact_wait_resend_key.
 let resendKey = env("RESEND_API_KEY") || "";
 // Claude key for the web chat: secret ANTHROPIC_API_KEY, else Vault impact_wait_anthropic_key. Unset = chat answers 503.
+// A key not scoped to a workspace (sk-ant-usr-...) also needs the workspace to bill: ANTHROPIC_WORKSPACE_ID,
+// else Vault impact_wait_anthropic_workspace. Until that is set, the chat stays closed.
 let anthropicKey = env("ANTHROPIC_API_KEY") || "";
+let anthropicWorkspace = env("ANTHROPIC_WORKSPACE_ID") || "";
+const chatReady = () => !!anthropicKey && (!anthropicKey.startsWith("sk-ant-usr-") || /^wrkspc_[A-Za-z0-9]+$/.test(anthropicWorkspace));
 // The chat runs on Claude Haiku 5.5 only (chat.ts CHAT_MODEL), and stops for the month at $200 of
 // model spend (Kevin, 10-23; app.ts). GOODWAIT_CHAT_MONTHLY_CAP_USD can lower the cap, never raise it.
 const CHAT_CAP_USD = Math.min(200, Number(env("GOODWAIT_CHAT_MONTHLY_CAP_USD")) || 200);
@@ -27,6 +31,7 @@ async function refreshKeys() {
     for (const n of ["idlen", "admesh", "agentads"] as const) keys[n] = fromEnv[n] || v[n] || undefined;
     resendKey = env("RESEND_API_KEY") || v.resend || "";
     anthropicKey = env("ANTHROPIC_API_KEY") || v.anthropic || "";
+    anthropicWorkspace = env("ANTHROPIC_WORKSPACE_ID") || v.anthropic_workspace || "";
   } catch (e) {
     console.log(`vault keys not loaded: ${(e as Error).message}`);
   }
@@ -84,9 +89,10 @@ const mailer: Mailer = async (m) => {
 // The chat module (and the Anthropic SDK) loads on the first chat message, not at cold start.
 let chatImpl: { key: string; fn: ChatFn } | null = null;
 const chat: ChatFn = async (turns) => {
-  if (!chatImpl || chatImpl.key !== anthropicKey) {
+  const key = `${anthropicKey}|${anthropicWorkspace}`;
+  if (!chatImpl || chatImpl.key !== key) {
     const { claudeChat } = await import("./chat.ts");
-    chatImpl = { key: anthropicKey, fn: claudeChat(anthropicKey) };
+    chatImpl = { key, fn: claudeChat(anthropicKey, anthropicWorkspace) };
   }
   return chatImpl.fn(turns);
 };
@@ -100,7 +106,7 @@ const app = createApp({
   auth: SERVICE ? auth : undefined,
   mailer,
   chat,
-  chatEnabled: () => !!anthropicKey,
+  chatEnabled: chatReady,
   chatMonthlyCapUsd: CHAT_CAP_USD,
   // www is the canonical host (the apex redirects there), so sign-in links skip a hop.
   appUrl: env("GOODWAIT_APP_URL") || "https://www.vibedough.com/app",

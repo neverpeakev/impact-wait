@@ -28,13 +28,15 @@ const SYSTEM = "You are the assistant inside Vibedough, a chat app people use on
 // Models that accept fallbacks: "default".
 const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
 
-export function claudeChat(apiKey: string): ChatFn {
+// workspaceId: required when the key is not scoped to one workspace (a personal key); every request
+// then names the workspace, so its usage and spend limits apply.
+export function claudeChat(apiKey: string, workspaceId = ""): ChatFn {
   const model = CHAT_MODEL;
   let client: Anthropic | null = null;
   return async (turns) => {
     if (!client) {
       const { default: AnthropicSdk } = await import("npm:@anthropic-ai/sdk@1.1.0");
-      client = new AnthropicSdk({ apiKey, maxRetries: 1, timeout: 60_000 });
+      client = new AnthropicSdk({ apiKey, maxRetries: 1, timeout: 60_000, ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}) });
     }
     try {
       const params = {
