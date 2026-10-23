@@ -10,6 +10,9 @@ const SYSTEM = "You are the assistant inside Vibedough, a chat app people use on
   "Answer in a few short paragraphs or a tight list; people are reading on a small screen. Use code blocks only for code. " +
   "If a question needs a long build, give the plan and the first step, and offer to continue.";
 
+// Models that accept fallbacks: "default".
+const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
+
 export function claudeChat(apiKey: string, model: string): ChatFn {
   let client: Anthropic | null = null;
   return async (turns) => {
@@ -25,8 +28,8 @@ export function claudeChat(apiKey: string, model: string): ChatFn {
         output_config: { effort: "low" },
         messages: turns,
         // On a policy decline, the API re-runs the request on the recommended fallback model.
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        // Only some models take it (Haiku has no server-side fallback), so it is sent only for those.
+        ...(FALLBACK_MODELS.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
       };
       const r = await client.beta.messages.create(params as unknown as Parameters<typeof client.beta.messages.create>[0]) as Anthropic.Beta.BetaMessage;
       if (r.stop_reason === "refusal") return { refused: true };
