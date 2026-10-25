@@ -13,7 +13,7 @@ export interface AuthApi {
 export type Email = { to: string; subject: string; html: string; text: string; tag: string };
 export type Mailer = (m: Email) => Promise<boolean>;
 
-export type Account = { id: string; user_id: string; email: string; install_code: string; paypal_email: string | null; created_at: Date | string; welcome_sent_at: Date | string | null };
+export type Account = { id: string; user_id: string; email: string; install_code: string; paypal_email: string | null; created_at: Date | string; welcome_sent_at: Date | string | null; web_only_at?: Date | string | null };
 export type Install = { earner_id: string; kind: "install" | "web"; linked_at: Date | string | null; last_seen_at: Date | string | null };
 // earners.ref of the account's own web-chat earner.
 export const WEB_EARNER_REF = "web-app";

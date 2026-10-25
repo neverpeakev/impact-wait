@@ -1,6 +1,6 @@
 // Postgres-backed Store. Tables live in the private impact_wait schema (not exposed via the REST API).
 import postgres from "npm:postgres@3.4.5";
-import type { AdRow, Draw, EarnerSummary, Impact, Ledger, Program, Store } from "./app.ts";
+import type { AdRow, ChatSummary, Draw, EarnerSummary, Impact, Ledger, Program, SavedMessage, SettledRate, Store } from "./app.ts";
 import { type Account, type Install, type TaxFormSummary, WEB_EARNER_REF } from "./accounts.ts";
 
 export function pgStore(dbUrl: string): Store {
@@ -152,7 +152,7 @@ export function pgStore(dbUrl: string): Store {
     },
     async ensureAccount(row) {
       // Almost every call is a returning account with the same email: one read and done.
-      const [have] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where user_id = ${row.user_id}`;
+      const [have] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at, web_only_at from impact_wait.accounts where user_id = ${row.user_id}`;
       if (have && have.email === row.email) return { account: have as unknown as Account, created: false };
       // The install code comes from the column default; a rare collision just retries.
       for (let i = 0; ; i++) {
@@ -160,12 +160,12 @@ export function pgStore(dbUrl: string): Store {
           const made = await sql`insert into impact_wait.accounts (user_id, email, provider, source)
             values (${row.user_id}, ${row.email}, ${row.provider}, ${row.source ? sql.json(row.source as any) : null})
             on conflict (user_id) do nothing
-            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at`;
+            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at, web_only_at`;
           if (made[0]) return { account: made[0] as unknown as Account, created: true };
           // Writes only when the sign-in email changed; the account page polls this.
           const [moved] = await sql`update impact_wait.accounts set email = ${row.email}, updated_at = now() where user_id = ${row.user_id} and email is distinct from ${row.email}
-            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at`;
-          const [a] = moved ? [moved] : await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where user_id = ${row.user_id}`;
+            returning id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at, web_only_at`;
+          const [a] = moved ? [moved] : await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at, web_only_at from impact_wait.accounts where user_id = ${row.user_id}`;
           return { account: a as unknown as Account, created: false };
         } catch (e) {
           if (i < 3 && (e as { code?: string; constraint_name?: string }).code === "23505" && /install_code/.test(String((e as { constraint_name?: string }).constraint_name))) continue;
@@ -212,7 +212,7 @@ export function pgStore(dbUrl: string): Store {
       }
     },
     async findAccountByCode(code) {
-      const [r] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at from impact_wait.accounts where install_code = ${code}`;
+      const [r] = await sql`select id, user_id, email, install_code, paypal_email, created_at, welcome_sent_at, web_only_at from impact_wait.accounts where install_code = ${code}`;
       return (r as unknown as Account) || null;
     },
     async linkEarner(earnerId, accountId, maxInstalls) {
@@ -257,6 +257,43 @@ export function pgStore(dbUrl: string): Store {
     async recordChatUsage(row) {
       await sql`insert into impact_wait.chat_usage (account_id, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, cost_usd)
         values (${row.account_id}, ${row.model}, ${row.input_tokens}, ${row.output_tokens}, ${row.cache_write_tokens}, ${row.cache_read_tokens}, ${row.cost_usd})`;
+    },
+    async listChats(accountId, limit) {
+      const rows = await sql`select id, title, created_at, updated_at from impact_wait.chats where account_id = ${accountId} order by updated_at desc limit ${limit}`;
+      return rows as unknown as ChatSummary[];
+    },
+    async chatMessages(accountId, chatId, limit) {
+      const [chat] = await sql`select id, title, created_at, updated_at from impact_wait.chats where id = ${chatId} and account_id = ${accountId}`;
+      if (!chat) return null;
+      const rows = await sql`select role, content, created_at from (
+          select id, role, content, created_at from impact_wait.chat_messages where chat_id = ${chatId} order by id desc limit ${limit}
+        ) m order by id asc`;
+      return { chat: chat as unknown as ChatSummary, messages: rows as unknown as SavedMessage[] };
+    },
+    async createChat(accountId, title) {
+      const [r] = await sql`insert into impact_wait.chats (account_id, title) values (${accountId}, ${title}) returning id, title, created_at, updated_at`;
+      return r as unknown as ChatSummary;
+    },
+    async addChatMessages(chatId, messages) {
+      await sql.begin(async (tx) => {
+        for (const m of messages) await tx`insert into impact_wait.chat_messages (chat_id, role, content) values (${chatId}, ${m.role}, ${m.content})`;
+        await tx`update impact_wait.chats set updated_at = now() where id = ${chatId}`;
+      });
+    },
+    async deleteChat(accountId, chatId) {
+      const rows = await sql`delete from impact_wait.chats where id = ${chatId} and account_id = ${accountId} returning id`;
+      return rows.length > 0;
+    },
+    async setWebOnly(accountId, on) {
+      if (on) await sql`update impact_wait.accounts set web_only_at = coalesce(web_only_at, now()), updated_at = now() where id = ${accountId}`;
+      else await sql`update impact_wait.accounts set web_only_at = null, updated_at = now() where id = ${accountId}`;
+    },
+    async settledRate() {
+      const [r] = await sql`select network, actual_usd::float8 as actual_usd, user_share_pct::float8 as user_share_pct, credited_waits, period_start, period_end, created_at
+        from impact_wait.settlements where credited_waits > 0 and actual_usd > 0 order by created_at desc limit 1`;
+      if (!r) return null;
+      return { network: r.network, actual_usd: Number(r.actual_usd), credited_waits: Number(r.credited_waits), period_start: r.period_start, period_end: r.period_end, settled_at: r.created_at,
+        per_view_usd: Number(r.actual_usd) * (Number(r.user_share_pct) / 100) / Number(r.credited_waits) } as SettledRate;
     },
     async rateCount(kind, key, seconds) {
       const [r] = await sql`select count(*)::int as n from impact_wait.rate_events where kind = ${kind} and key = ${key} and created_at > now() - make_interval(secs => ${seconds})`;
