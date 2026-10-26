@@ -121,6 +121,31 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
 .compose textarea:focus{outline:none;border-color:var(--cobalt)}
 .compose button{width:48px;height:48px;border-radius:50%;border:0;background:var(--cobalt);color:#fff;font-size:20px;cursor:pointer;flex:none;align-self:flex-end}
 .notice{background:#fff;border-radius:12px;padding:12px 14px;font-size:14px;color:var(--ink-soft)}
+/* Saved chats: a header with the chat list and New chat */
+.chat{position:relative}
+.chathead{display:flex;align-items:center;gap:10px;padding:0 0 8px;border-bottom:1px solid var(--line)}
+.chathead .ctitle{flex:1;min-width:0;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chatsbtn{font:600 14px/1 "Public Sans",sans-serif;background:var(--linen-2);color:var(--ink);border:0;border-radius:8px;padding:9px 12px;cursor:pointer;flex:none}
+.newbtn{font:600 14px/1 "Public Sans",sans-serif;background:none;color:var(--cobalt);border:1.5px solid var(--cobalt);border-radius:8px;padding:8px 12px;cursor:pointer;flex:none}
+.chatlist{position:absolute;top:46px;left:0;right:0;max-height:60%;overflow-y:auto;background:#fff;border-radius:12px;box-shadow:0 18px 40px -16px rgba(14,23,48,.45);z-index:5;padding:6px}
+.chatlist ul{list-style:none;margin:0;padding:0}
+.chatlist li{display:flex;align-items:center;gap:6px;border-radius:8px}
+.chatlist li[aria-current=true]{background:#E6ECFB}
+.chatlist .open{flex:1;min-width:0;text-align:left;background:none;border:0;padding:10px;cursor:pointer;font:inherit;color:var(--ink)}
+.chatlist .open b{display:block;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chatlist .open span{font-size:12.5px;color:var(--ink-soft)}
+.chatlist .del{background:none;border:0;color:var(--ink-soft);font-size:18px;width:36px;height:36px;border-radius:8px;cursor:pointer;flex:none}
+.chatlist .del:hover{background:var(--linen-2);color:var(--err)}
+.chatlist .empty{padding:12px;font-size:14px;color:var(--ink-soft)}
+.chatcard{padding:16px 18px}
+.chatcard .chat{height:calc(100dvh - 190px);min-height:480px}
+.chatcard .bubble.ai,.chatcard .sponsor,.chatcard .notice{background:var(--linen)}
+.skip{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}
+/* Live earnings */
+.live{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-soft);margin:2px 0 14px}
+.live .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:p 2s infinite;flex:none}
+.live b{color:var(--ink);font-size:16px}
+.rate{font-size:13.5px;color:var(--ink-soft);background:var(--linen);border-radius:10px;padding:10px 12px;margin:14px 0 0}
 .skeleton{height:160px;border-radius:14px;background:linear-gradient(90deg,#E3E9F3,#EEF2F8,#E3E9F3);background-size:200% 100%;animation:sk 1.2s infinite}
 @keyframes sk{to{background-position:-200% 0}}
 
@@ -135,9 +160,10 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
   .who span{display:none}
 }
 body.mobile .tabs{display:flex;gap:6px;background:var(--linen-2);border-radius:12px;padding:4px;margin:0 0 12px}
-body.mobile .tabs button{flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;font:600 15px/1 "Public Sans",sans-serif;color:var(--ink-soft);cursor:pointer}
+body.mobile .tabs button{flex:1;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;line-height:1.1;border:0;border-radius:9px;background:transparent;font:600 15px/1 "Public Sans",sans-serif;color:var(--ink-soft);cursor:pointer}
 body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(14,23,48,.12)}
-@media (prefers-reduced-motion:reduce){.pulse,.skeleton{animation:none}}
+body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:var(--brass)}
+@media (prefers-reduced-motion:reduce){.pulse,.skeleton,.live .dot{animation:none}}
 </style>
 </head>
 <body>
@@ -163,13 +189,13 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
   const mobile = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     || (matchMedia("(pointer: coarse)").matches && innerWidth < 900);
   document.body.classList.toggle("mobile", mobile);
-  let acct = null, poll = null, tab = "chat";
+  let acct = null, poll = null, live = null, tab = "chat", liveAt = 0;
 
   const STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI AA AE AP".split(" ");
   const CLASSES = [["individual", "Individual / sole proprietor"], ["llc_s", "LLC taxed as S corp"], ["llc_c", "LLC taxed as C corp"], ["llc_p", "LLC taxed as partnership"], ["s_corp", "S corporation"], ["c_corp", "C corporation"], ["partnership", "Partnership"], ["trust_estate", "Trust / estate"], ["other", "Other"]];
 
   function signedOutView(note) {
-    stopPoll();
+    stopPoll(); stopLive();
     document.getElementById("who").hidden = true;
     main.innerHTML = `<div class="center"><div class="card"><div id="si"></div></div></div>`;
     if (note) main.querySelector(".card").insertAdjacentHTML("afterbegin", `<p class="msg err" style="margin:0 0 12px">${esc(note)}</p>`);
@@ -180,21 +206,27 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
     const r = await VD.api("/account/me");
     if (r.status === 401) return signedOutView();
     if (r.status !== 200) { main.innerHTML = `<div class="center"><div class="card"><h2>We hit a snag.</h2><p class="muted">${esc(r.data.error || "Try again in a minute.")}</p><button class="btn" id="retry">Try again</button></div></div>`; document.getElementById("retry").onclick = load; return; }
-    acct = r.data;
+    acct = r.data; liveAt = Date.now();
     document.getElementById("who").hidden = false;
     document.getElementById("who-email").textContent = acct.email;
     render();
   }
 
+  // Computers: the install step until it checks in, unless they chose "just use the chat". Then the
+  // chat beside live earnings. Phones: Chat and Earnings tabs.
   function render() {
     if (mobile) return renderMobile();
-    if (!acct.installed) return renderInstall();
+    if (!acct.installed && !acct.web_only) return renderInstall();
     stopPoll();
-    renderDashboard(main);
+    renderHome();
   }
 
   // ------------------------------------------------------------ install (desktop)
   function renderInstall() {
+    stopLive();
+    const skip = acct.web_only
+      ? `<div class="skip"><button class="btn ghost" type="button" data-go="back">Back to the chat</button></div>`
+      : `<div class="skip"><p style="margin:0 0 4px"><b>No Claude Code, or no paid Claude plan?</b></p><p class="small muted" style="margin:0 0 12px">Skip this step and use the Vibedough chat in your browser. It's free, your chats are saved, and you earn the same way. You can add Claude Code any time.</p><button class="btn ghost" type="button" data-go="webonly">Skip, just use the chat</button><p class="msg" role="alert"></p></div>`;
     main.innerHTML = `<div class="grid"><div>
       <h1>One line and you're earning.</h1>
       <p class="lead">Paste this into your terminal. It adds Vibedough to Claude Code and links it to your account with your code.</p>
@@ -207,6 +239,7 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
       </ol>
       <div class="waiting" role="status"><span class="pulse" aria-hidden="true"></span>Waiting for your install…</div>
       <p class="small muted" style="margin-top:22px">Already have Vibedough in Claude Code? Type <span class="chip">/earn link ${esc(acct.install_code)} <button class="copy" type="button" data-copy="/earn link ${esc(acct.install_code)}">Copy</button></span> there instead. Needs Claude Code 2.1.275 or later (<code>claude update</code>).</p>
+      ${skip}
     </div><div class="stack">${setupCard(true)}</div></div>`;
     wire(main);
     startPoll();
@@ -225,37 +258,86 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
   function stopPoll() { if (poll) clearInterval(poll); poll = null; }
 
   // ------------------------------------------------------------ dashboard
+  // Earnings and setup only (the phone's Earnings tab).
   function renderDashboard(host) {
     host.innerHTML = `<div class="grid"><div class="stack">${earningsCard()}</div><div class="stack">${setupCard(false)}${codeCard()}</div></div>`;
     wire(host);
+    startLive();
   }
 
+  // Computer, once installed or chat-only: the chat beside live earnings.
+  function renderHome() {
+    main.innerHTML = `<div class="grid"><section class="card chatcard" aria-label="Chat"><div id="pane"></div></section>
+      <div class="stack">${earningsCard()}${setupCard(false)}${codeCard()}</div></div>`;
+    wire(main);
+    renderChat(document.getElementById("pane"));
+    startLive();
+  }
+
+  // Live: while an earnings card is on screen and the page is in front, re-read the account every
+  // 15 seconds (and right after a view is reported) and redraw just that card.
+  function startLive() { stopLive(); live = setInterval(refreshEarnings, 15000); }
+  function stopLive() { if (live) clearInterval(live); live = null; }
+  let refreshing = false;
+  async function refreshEarnings() {
+    if (document.hidden || refreshing || !document.getElementById("earn-card")) return;
+    refreshing = true;
+    try {
+      const r = await VD.api("/account/me").catch(() => ({ status: 0 }));
+      if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
+      if (r.status !== 200) return;
+      const wasInstalled = acct.installed;
+      acct = r.data; liveAt = Date.now();
+      const el = document.getElementById("earn-card");
+      if (el) el.outerHTML = earningsCard();
+      // An install that just checked in: redraw the setup card's tick too (keeps the chat as it is).
+      if (!wasInstalled && acct.installed) { const s = document.getElementById("setup-card"); if (s) { s.outerHTML = setupCard(false); wire(document.getElementById("setup-card")); } }
+    } finally { refreshing = false; }
+  }
+  setInterval(() => { const u = document.getElementById("live-at"); if (u) u.textContent = updated(); }, 5000);
+  const updated = () => { const s = Math.round((Date.now() - liveAt) / 1000); return s < 10 ? "updated just now" : s < 120 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`; };
+  const day = (d) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); } catch (_) { return String(d); } };
+  const rateMoney = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+  // Views today count across every install and the web chat, live, even before payout setup. Dollar
+  // figures come only from the last confirmed settlement: your share of what Velocity actually paid.
   function earningsCard() {
     const e = acct.earnings;
+    const liveLine = `<p class="live"><span class="dot" aria-hidden="true"></span><span><b>${num(acct.views_today)}</b> paid view${acct.views_today === 1 ? "" : "s"} today</span><span id="live-at" style="margin-left:auto;font-size:12.5px">${updated()}</span></p>`;
+    const rateLine = (x) => x.rate
+      ? `Your rate: <b>${rateMoney(x.rate.per_1000_usd)} per 1,000 views</b>, from the settlement for ${day(x.rate.period_start)} to ${day(x.rate.period_end)}. That's ${num(x.share_pct)}% of what advertisers actually paid us for those views. Estimates use this rate until the next settlement.`
+      : `Dollar amounts show after the first monthly settlement, when advertisers have paid. Until then we count your views, and each one is credited at ${num(x.share_pct)}% of what it actually earned.`;
     const body = (x) => `<p class="small muted" style="margin:0">Your balance</p><div class="money">${money(x.balance_usd)}</div>
-      <p class="small muted" style="margin:0">Cash goes to PayPal once you reach ${money(x.min_payout_usd)}. Your share: ${num(x.share_pct)}% of what advertisers actually paid, settled monthly.</p>
-      <div class="kv"><div><b>${num(x.views_today)}</b><span>paid views today</span></div><div><b>${num(x.views_total)}</b><span>paid views all time</span></div>
-      <div><b>${x.est_pending_usd === null ? num(x.pending_views) : money(x.est_pending_usd)}</b><span>${x.est_pending_usd === null ? "views waiting to settle" : "est. waiting to settle"}</span></div><div><b>${money(x.paid_usd)}</b><span>paid out${x.donated_usd ? " · " + money(x.donated_usd) + " donated" : ""}</span></div></div>`;
-    if (e) return `<section class="card" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2>${body(e)}</section>`;
-    const fake = { balance_usd: 12.34, min_payout_usd: 10, share_pct: 50, views_today: 87, views_total: 4210, est_pending_usd: 3.21, pending_views: 900, paid_usd: 0, donated_usd: 0 };
-    return `<section class="card locked" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2><div class="blur" aria-hidden="true">${body(fake)}</div>
-      <div class="lock"><p><b>Add your PayPal email and W-9</b> to see your earnings. It takes about a minute, and it's how we pay you.</p></div></section>`;
+      <p class="small muted" style="margin:0">Cash goes to PayPal once you reach ${money(x.min_payout_usd)}. Settled monthly.</p>
+      <div class="kv"><div><b>${num(x.views_total)}</b><span>paid views all time</span></div>
+      <div><b>${x.est_pending_usd === null ? num(x.pending_views) : money(x.est_pending_usd)}</b><span>${x.est_pending_usd === null ? "views waiting to settle" : `est. for ${num(x.pending_views)} views waiting to settle`}</span></div>
+      <div><b>${money(x.credited_usd ?? x.balance_usd)}</b><span>earned all time</span></div><div><b>${money(x.paid_usd)}</b><span>paid out${x.donated_usd ? " · " + money(x.donated_usd) + " donated" : ""}</span></div></div>
+      <p class="rate">${rateLine(x)}</p>`;
+    if (e) return `<section class="card" id="earn-card" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2>${liveLine}${body(e)}</section>`;
+    const fake = { balance_usd: 12.34, credited_usd: 12.34, min_payout_usd: 10, share_pct: 50, views_total: 4210, est_pending_usd: 3.21, pending_views: 900, paid_usd: 0, donated_usd: 0, rate: null };
+    return `<section class="card" id="earn-card" aria-labelledby="earn-h"><h2 id="earn-h">Earnings</h2>${liveLine}<div class="locked"><div class="blur" aria-hidden="true">${body(fake)}</div>
+      <div class="lock"><p><b>Add your PayPal email and W-9</b> to see your earnings. It takes about a minute, and it's how we pay you.</p></div></div></section>`;
   }
 
   function setupCard(installing) {
     const w9 = acct.w9 && acct.w9.on_file;
     const step = (done, title, val, inner) => `<li class="${done ? "done" : ""}"><div class="sh"><span class="tick" aria-hidden="true">✓</span><b>${title}</b><span class="val">${val}</span></div>${inner ? `<div class="sbody">${inner}</div>` : ""}</li>`;
     const installVal = acct.installed ? `Checked in ${ago(acct.last_seen_at)}` : acct.installs ? "Linked, not seen lately" : "Not yet";
-    return `<section class="card" aria-labelledby="setup-h"><h2 id="setup-h">${installing ? "Then get paid" : "Payout setup"}</h2>
+    // Chat-only accounts: Claude Code is an optional extra, never a step they're behind on.
+    const chatOnly = acct.web_only && !acct.installed && !acct.installs;
+    return `<section class="card" id="setup-card" aria-labelledby="setup-h"><h2 id="setup-h">${installing ? "Then get paid" : "Payout setup"}</h2>
       <p class="small muted" style="margin:0">${acct.payout_ready ? "You're all set to be paid." : "Two quick things so we can pay you."}</p>
       <ul class="steps">
-        ${installing ? "" : step(acct.installed, "Installed", installVal, acct.installed ? "" : `<button class="linkbtn" type="button" data-go="install">Show the install line</button>`)}
+        ${installing || chatOnly ? "" : step(acct.installed, "Installed", installVal, acct.installed ? "" : `<button class="linkbtn" type="button" data-go="install">Show the install line</button>`)}
         ${step(!!acct.paypal_email, "PayPal email", acct.paypal_email ? esc(acct.paypal_email) : "", `<form class="pp" novalidate><div class="row" style="gap:8px;flex-direction:row"><input class="in" type="email" name="pp" autocomplete="email" placeholder="${acct.paypal_email ? "Change PayPal email" : "you@paypal.com"}" aria-label="PayPal email"><button class="btn" type="submit" style="flex:0 0 auto">Save</button></div><p class="msg" role="alert"></p></form>`)}
         ${step(w9, "W-9 tax form", w9 ? `${acct.w9.tin_type.toUpperCase()} ending ${esc(acct.w9.tin_last4)}` : "", w9 ? `<button class="linkbtn" type="button" data-go="w9">Update it</button>` : `<p class="small muted" style="margin:0 0 10px">The IRS needs it before we can pay US earners. Stored encrypted; we only ever show the last 4 digits.</p><button class="btn ghost" type="button" data-go="w9">Fill out the W-9</button>`)}
       </ul></section>`;
   }
 
   function codeCard() {
+    if (acct.web_only && !acct.installed && !acct.installs) return `<section class="card" aria-labelledby="code-h"><h2 id="code-h">Use Claude Code?</h2>
+      <p class="small muted" style="margin:6px 0 10px">Add Vibedough to it and you also earn while Claude Code works, with your views and earnings showing right in the terminal. Same account, same balance.</p>
+      <button class="linkbtn" type="button" data-go="install">Show the install line</button></section>`;
     return `<section class="card" aria-labelledby="code-h"><h2 id="code-h">Your install code</h2>
       <p style="margin:6px 0 10px"><span class="chip">${esc(acct.install_code)}</span></p>
       <p class="small muted" style="margin:0 0 10px">Installing on another computer? Use <button class="linkbtn" type="button" data-copy="${esc(acct.install_command)}">the install line</button> there too. ${acct.installs ? `${num(acct.installs)} install${acct.installs === 1 ? "" : "s"} linked.` : ""}</p>
@@ -317,20 +399,26 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
 
   // ------------------------------------------------------------ mobile
   function renderMobile() {
-    stopPoll();
-    main.innerHTML = `<div class="tabs" role="tablist"><button role="tab" data-tab="chat" aria-selected="${tab === "chat"}">Chat</button><button role="tab" data-tab="earn" aria-selected="${tab === "earn"}">Earnings</button></div><div id="pane"></div>`;
+    stopPoll(); stopLive();
+    main.innerHTML = `<div class="tabs" role="tablist"><button role="tab" data-tab="chat" aria-selected="${tab === "chat"}" aria-label="Chat here: wait and earn">Chat here<small>wait and earn</small></button><button role="tab" data-tab="earn" aria-selected="${tab === "earn"}">Earnings</button></div><div id="pane"></div>`;
     main.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderMobile(); });
     const pane = document.getElementById("pane");
     if (tab === "earn") {
-      const tip = acct.installed ? "" : `<div class="notice" style="margin-bottom:16px">Earn more on your computer: we emailed you a one-line install for Claude Code. Your code is <b>${esc(acct.install_code)}</b>.</div>`;
+      const tip = acct.installed || acct.web_only ? "" : `<div class="notice" style="margin-bottom:16px">Earn more on your computer: we emailed you a one-line install for Claude Code. Your code is <b>${esc(acct.install_code)}</b>.</div>`;
       pane.innerHTML = tip + `<div id="dash"></div>`;
       return renderDashboard(document.getElementById("dash"));
     }
     renderChat(pane);
   }
 
-  const chatLog = (() => { try { return JSON.parse(sessionStorage.getItem("vd_chat") || "[]"); } catch (_) { return []; } })();
-  const saveChat = () => { try { sessionStorage.setItem("vd_chat", JSON.stringify(chatLog.slice(-30))); } catch (_) {} };
+  // Saved chats live in the account (server). The open chat's id is remembered per tab only so a
+  // reload picks it back up; the messages always come from the server.
+  const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch (_) { return null; } }, set: (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (_) {} } };
+  let chatId = ss.get("vd_chat_id"), chatTitle = "New chat", chatLog = [], chatLoaded = !chatId;
+  function openChat(id, title) {
+    chatId = id; chatTitle = title || "New chat"; chatLog = []; chatLoaded = !id;
+    ss.set("vd_chat_id", id);
+  }
   // Minimal formatting: fenced code blocks, everything else as text.
   const fmt = (t) => esc(t).replace(/```[a-z0-9]*\n?([\s\S]*?)```/gi, "<pre>$1</pre>");
 
@@ -404,44 +492,105 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
     const el = sponsorEl(v);
     slot.appendChild(el);
     log.scrollTop = log.scrollHeight;
-    setTimeout(() => { if (!document.hidden && el.isConnected) velocityView(v); }, 1100);
+    setTimeout(() => { if (!document.hidden && el.isConnected) velocityView(v).then(() => setTimeout(refreshEarnings, 1500)); }, 1100);
   }
 
+  const WELCOME = `<div class="notice">Chat about code, side projects, anything. Your chats are saved to your account so you can pick them up later. While it thinks you may see a sponsored line, and half of what it earns is yours.</div>`;
+  const bubble = (m) => `<div class="bubble ${m.role === "user" ? "me" : "ai"}">${m.role === "user" ? esc(m.content) : fmt(m.content)}</div>`;
+
   function renderChat(pane) {
-    pane.innerHTML = `<div class="chat"><div class="log" id="log" aria-live="polite"></div>
+    pane.innerHTML = `<div class="chat">
+      <div class="chathead"><button class="chatsbtn" type="button" id="chats-btn" aria-expanded="false" aria-controls="chat-list">Chats ▾</button><span class="ctitle" id="ctitle">${esc(chatTitle)}</span><button class="newbtn" type="button" id="new-chat">New chat</button></div>
+      <div class="chatlist" id="chat-list" hidden></div>
+      <div class="log" id="log" aria-live="polite"></div>
       <form class="compose" id="compose"><textarea id="q" rows="1" placeholder="Ask anything…" aria-label="Message"></textarea><button type="submit" aria-label="Send">↑</button></form></div>`;
-    const log = document.getElementById("log"), form = document.getElementById("compose"), q = document.getElementById("q");
-    if (!chatLog.length) log.innerHTML = `<div class="notice">Chat about code, side projects, anything. While it thinks you may see a sponsored line, and half of what it earns is yours.</div>`;
-    for (const m of chatLog) log.insertAdjacentHTML("beforeend", `<div class="bubble ${m.role === "user" ? "me" : "ai"}">${m.role === "user" ? esc(m.content) : fmt(m.content)}</div>`);
-    log.scrollTop = log.scrollHeight;
+    const log = pane.querySelector("#log"), form = pane.querySelector("#compose"), q = pane.querySelector("#q");
+    const list = pane.querySelector("#chat-list"), listBtn = pane.querySelector("#chats-btn"), titleEl = pane.querySelector("#ctitle");
+    let busy = false;
+
+    function paint() {
+      titleEl.textContent = chatTitle;
+      log.innerHTML = chatLog.length ? chatLog.map(bubble).join("") : WELCOME;
+      log.scrollTop = log.scrollHeight;
+    }
+    async function loadChat() {
+      if (chatLoaded) return paint();
+      log.innerHTML = `<div class="thinking"><span class="pulse"></span>Opening your chat…</div>`;
+      const want = chatId;
+      const r = await VD.api("/account/chats/" + encodeURIComponent(chatId)).catch(() => ({ status: 0, data: {} }));
+      if (want !== chatId) return; // they picked another chat meanwhile
+      if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
+      if (r.status === 200 && r.data.chat) {
+        chatTitle = r.data.chat.title; chatLog = (r.data.messages || []).map((m) => ({ role: m.role, content: m.content })); chatLoaded = true;
+        return paint();
+      }
+      if (r.status === 404) { openChat(null); return paint(); } // deleted elsewhere
+      log.innerHTML = `<div class="notice">Couldn't open that chat. <button class="linkbtn" type="button" id="retry-chat">Try again</button></div>`;
+      log.querySelector("#retry-chat").onclick = loadChat;
+    }
+
+    function closeList() { list.hidden = true; listBtn.setAttribute("aria-expanded", "false"); }
+    async function showList() {
+      list.hidden = false; listBtn.setAttribute("aria-expanded", "true");
+      list.innerHTML = `<div class="empty">Loading your chats…</div>`;
+      const r = await VD.api("/account/chats").catch(() => ({ status: 0, data: {} }));
+      if (list.hidden) return;
+      if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
+      if (r.status !== 200) { list.innerHTML = `<div class="empty">Couldn't load your chats. Try again in a moment.</div>`; return; }
+      const chats = r.data.chats || [];
+      if (!chats.length) { list.innerHTML = `<div class="empty">No saved chats yet. Send a message and it's saved here.</div>`; return; }
+      list.innerHTML = `<ul>${chats.map((c) => `<li ${c.id === chatId ? 'aria-current="true"' : ""}><button class="open" type="button" data-id="${esc(c.id)}" data-title="${esc(c.title)}"><b>${esc(c.title)}</b><span>${esc(ago(c.updated_at))}</span></button><button class="del" type="button" data-del="${esc(c.id)}" aria-label="Delete chat: ${esc(c.title)}">×</button></li>`).join("")}</ul>`;
+      list.querySelectorAll("[data-id]").forEach((b) => b.onclick = () => { closeList(); if (b.dataset.id !== chatId) { openChat(b.dataset.id, b.dataset.title); loadChat(); } });
+      list.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+        if (!confirm("Delete this chat? This can't be undone.")) return;
+        const d = await VD.api("/account/chats/delete", { id: b.dataset.del }).catch(() => ({ status: 0 }));
+        if (d.status === 200 || d.status === 404) {
+          if (b.dataset.del === chatId) { openChat(null); paint(); }
+          b.closest("li").remove();
+          if (!list.querySelector("li")) list.innerHTML = `<div class="empty">No saved chats yet.</div>`;
+        }
+      });
+    }
+    listBtn.onclick = () => (list.hidden ? showList() : closeList());
+    pane.querySelector("#new-chat").onclick = () => { if (busy) return; closeList(); openChat(null); paint(); q.focus(); };
+    pane.addEventListener("keydown", (e) => { if (e.key === "Escape" && !list.hidden) { closeList(); listBtn.focus(); } });
+
     q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 140) + "px"; });
     q.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !mobile) { e.preventDefault(); form.requestSubmit(); } });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const text = q.value.trim();
-      if (!text) return;
+      if (!text || busy) return;
+      busy = true; closeList();
       q.value = ""; q.style.height = "auto";
       log.querySelector(".notice")?.remove();
-      chatLog.push({ role: "user", content: text }); saveChat();
+      const sentIn = chatId;
+      chatLog.push({ role: "user", content: text });
       // The slot keeps the sponsored line in place above the reply, whichever arrives first.
-      log.insertAdjacentHTML("beforeend", `<div class="bubble me">${esc(text)}</div><div class="slot"></div><div class="thinking"><span class="pulse"></span>Thinking…</div>`);
+      log.insertAdjacentHTML("beforeend", `${bubble({ role: "user", content: text })}<div class="slot"></div><div class="thinking"><span class="pulse"></span>Thinking…</div>`);
       log.scrollTop = log.scrollHeight;
       const slots = log.querySelectorAll(".slot"), slot = slots[slots.length - 1];
       const thinking = log.querySelector(".thinking");
-      // The sponsored line and the reply are fetched together; a line shows while the reply is on its way.
       showSponsor(slot, log, text.slice(0, 500)).catch(() => {});
-      const r = await VD.api("/account/chat", { messages: chatLog.slice(-20) }).catch(() => ({ status: 0, data: {} }));
+      const r = await VD.api("/account/chat", { message: text, chat_id: chatId || undefined }).catch(() => ({ status: 0, data: {} }));
+      busy = false;
       thinking.remove();
+      if (sentIn !== chatId) return; // switched chats while waiting; the reply is saved in the other chat
       if (r.status === 200 && r.data.reply) {
-        chatLog.push({ role: "assistant", content: r.data.reply }); saveChat();
-        log.insertAdjacentHTML("beforeend", `<div class="bubble ai">${fmt(r.data.reply)}</div>`);
+        if (r.data.chat_id) { chatId = r.data.chat_id; ss.set("vd_chat_id", chatId); chatLoaded = true; }
+        if (r.data.title) { chatTitle = r.data.title; titleEl.textContent = chatTitle; }
+        chatLog.push({ role: "assistant", content: r.data.reply });
+        log.insertAdjacentHTML("beforeend", bubble({ role: "assistant", content: r.data.reply }));
       } else {
         if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
-        chatLog.pop(); saveChat();
+        chatLog.pop();
+        if (r.status === 404 && sentIn) openChat(null);
+        q.value = text; // nothing was saved: give their message back
         log.insertAdjacentHTML("beforeend", `<div class="notice">${esc(r.data.error || "Couldn't reach us. Check your connection and try again.")}</div>`);
       }
       log.scrollTop = log.scrollHeight;
     });
+    loadChat();
   }
 
   // ------------------------------------------------------------ shared wiring
@@ -455,6 +604,16 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
       if (go === "w9") return renderW9();
       if (go === "back") return load();
       if (go === "install") return renderInstall();
+      if (go === "webonly") {
+        b.disabled = true;
+        const r = await VD.api("/account/web-only", { on: true }).catch(() => ({ status: 0, data: {} }));
+        b.disabled = false;
+        if (r.status === 200) { acct.web_only = true; stopPoll(); return render(); }
+        if (r.status === 401) return signedOutView("Your session expired. Sign in again.");
+        const m = b.parentElement.querySelector(".msg");
+        if (m) { m.className = "msg err"; m.textContent = (r.data && r.data.error) || "That didn't work. Try again in a moment."; }
+        return;
+      }
       if (go === "rotate") {
         if (!confirm("Get a new install code? The old one stops working for new installs. Installs already linked stay linked.")) return;
         const r = await VD.api("/account/code", {});
@@ -472,9 +631,14 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
     }));
   }
 
-  document.getElementById("signout").addEventListener("click", () => { VD.signOut(); try { sessionStorage.removeItem("vd_chat"); } catch (_) {} signedOutView(); });
+  document.getElementById("signout").addEventListener("click", () => { VD.signOut(); openChat(null); ss.set("vd_chat", null); signedOutView(); });
   // Back from a tab: refresh, so an install that checked in meanwhile shows up.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && acct && !acct.installed && !mobile) load(); });
+  // On the chat and earnings views, just refresh the earnings (never redraw the chat under them).
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || !acct) return;
+    if (!mobile && !acct.installed && !acct.web_only) return load();
+    refreshEarnings();
+  });
 
   (async () => {
     const done = await VD.finishFromUrl();

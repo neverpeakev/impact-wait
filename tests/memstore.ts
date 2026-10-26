@@ -1,6 +1,6 @@
 import type { AdRow, Impact, Program, Store } from "../supabase/functions/goodwait/app.ts";
 
-export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial<Program> = {}): Store & { ads: Map<string, AdRow & { ip_hash: string }>; totals: Map<string, any>; sites: Map<string, any>; earners: Map<string, any>; accounts: Map<string, any>; taxForms: Map<string, any>; payouts: any[]; redemptions: any[]; draws: any[]; freeEntries: any[]; prog: Program; age(id: string, ms: number): void; settle(network: string, actualUsd: number): void; balance(earnerId: string): number } {
+export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial<Program> = {}): Store & { ads: Map<string, AdRow & { ip_hash: string }>; totals: Map<string, any>; sites: Map<string, any>; earners: Map<string, any>; accounts: Map<string, any>; taxForms: Map<string, any>; payouts: any[]; redemptions: any[]; draws: any[]; freeEntries: any[]; prog: Program; chats: Map<string, any>; age(id: string, ms: number): void; settle(network: string, actualUsd: number): void; balance(earnerId: string): number } {
   const sites = new Map<string, any>();
   const totals = new Map<string, any>();
   const ads = new Map<string, any>();
@@ -9,9 +9,14 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
   const taxForms = new Map<string, any>();
   const rates: { kind: string; key: string; at: number }[] = [];
   const chatUsage: { account_id: string; cost_usd: number; at: number }[] = [];
+  const chats = new Map<string, any>();
+  const chatMsgs: { chat_id: string; role: "user" | "assistant"; content: string; created_at: Date; n: number }[] = [];
+  const settlements: any[] = [];
+  let msgN = 0, tick = 0;
+  const pubChat = (c: any) => ({ id: c.id, title: c.title, created_at: c.created_at, updated_at: c.updated_at });
   const A31 = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const newCode = () => { const c = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => A31[b % 31]).join(""); return `VD-${c.slice(0, 4)}-${c.slice(4)}`; };
-  const pubAccount = (a: any) => ({ id: a.id, user_id: a.user_id, email: a.email, install_code: a.install_code, paypal_email: a.paypal_email, created_at: a.created_at, welcome_sent_at: a.welcome_sent_at });
+  const pubAccount = (a: any) => ({ id: a.id, user_id: a.user_id, email: a.email, install_code: a.install_code, paypal_email: a.paypal_email, created_at: a.created_at, welcome_sent_at: a.welcome_sent_at, web_only_at: a.web_only_at ?? null });
   const payouts: any[] = [];
   const redemptions: any[] = [];
   const draws: any[] = [];
@@ -23,7 +28,7 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
   let codeN = 0;
   const imp: Impact = { cause_name: null, cause_url: null, unit_label: null, usd_per_unit: null, pledge_pct: null, donated_usd: 0, donated_updated_at: null, ...impact };
   return {
-    sites, totals, ads, earners, accounts, taxForms, payouts, redemptions, draws, freeEntries, prog, balance,
+    sites, totals, ads, earners, accounts, taxForms, payouts, redemptions, draws, freeEntries, prog, balance, chats,
     age(id, ms) {
       const a = ads.get(id); a.created_at = new Date(a.created_at.getTime() - ms);
       if (a.impression_at) a.impression_at = new Date(a.impression_at.getTime() - ms);
@@ -35,6 +40,7 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
       const by = new Map<string, number>();
       for (const a of open) { a.settlement_id = sid; by.set(a.earner_id, (by.get(a.earner_id) || 0) + 1); }
       const fresh: any[] = [];
+      if (open.length && actualUsd > 0) settlements.push({ network, actual_usd: actualUsd, user_share_pct: prog.user_share_pct, credited_waits: open.length, period_start: new Date(0), period_end: new Date(), created_at: new Date(Date.now() + settlements.length) });
       for (const [earner_id, n] of by) fresh.push({ settlement_id: sid, earner_id, credited_waits: n, amount_usd: r4(actualUsd * (prog.user_share_pct / 100) * n / open.length), status: "owed", kind: "earnings" });
       for (const p of [...fresh]) {
         const f = earners.get(p.earner_id); const r = f?.referred_by && earners.get(f.referred_by);
@@ -221,6 +227,38 @@ export function memStore(impact: Partial<Impact> = {}, programOverrides: Partial
     async touchEarner(earnerId) { const e = earners.get(earnerId); if (e) e.last_seen_at = new Date(); },
     async chatSpendSince(since) { return chatUsage.filter((u) => u.at >= since.getTime()).reduce((t, u) => t + u.cost_usd, 0); },
     async recordChatUsage(row) { chatUsage.push({ ...row, at: Date.now() }); },
+    async listChats(accountId, limit) {
+      return [...chats.values()].filter((c) => c.account_id === accountId).sort((a, b) => b.order - a.order).slice(0, limit).map(pubChat);
+    },
+    async chatMessages(accountId, chatId, limit) {
+      const c = chats.get(chatId);
+      if (!c || c.account_id !== accountId) return null;
+      const ms = chatMsgs.filter((m) => m.chat_id === chatId).sort((a, b) => a.n - b.n).slice(-limit).map((m) => ({ role: m.role, content: m.content, created_at: m.created_at }));
+      return { chat: pubChat(c), messages: ms };
+    },
+    async createChat(accountId, title) {
+      const c = { id: crypto.randomUUID(), account_id: accountId, title, created_at: new Date(), updated_at: new Date(), order: ++tick };
+      chats.set(c.id, c);
+      return pubChat(c);
+    },
+    async addChatMessages(chatId, messages) {
+      for (const m of messages) chatMsgs.push({ chat_id: chatId, role: m.role, content: m.content, created_at: new Date(), n: ++msgN });
+      const c = chats.get(chatId); c.updated_at = new Date(); c.order = ++tick;
+    },
+    async deleteChat(accountId, chatId) {
+      const c = chats.get(chatId);
+      if (!c || c.account_id !== accountId) return false;
+      chats.delete(chatId);
+      for (let i = chatMsgs.length - 1; i >= 0; i--) if (chatMsgs[i].chat_id === chatId) chatMsgs.splice(i, 1);
+      return true;
+    },
+    async setWebOnly(accountId, on) { const a = accounts.get(accountId); a.web_only_at = on ? (a.web_only_at ?? new Date()) : null; },
+    async settledRate() {
+      const r = [...settlements].sort((a, b) => b.created_at - a.created_at)[0];
+      if (!r) return null;
+      return { network: r.network, actual_usd: r.actual_usd, credited_waits: r.credited_waits, period_start: r.period_start, period_end: r.period_end, settled_at: r.created_at,
+        per_view_usd: r.actual_usd * (r.user_share_pct / 100) / r.credited_waits };
+    },
     async rateCount(kind, key, seconds) { return rates.filter((r) => r.kind === kind && r.key === key && r.at > Date.now() - seconds * 1000).length; },
     async rateHit(kind, key) { rates.push({ kind, key, at: Date.now() }); },
     async stats(site) {

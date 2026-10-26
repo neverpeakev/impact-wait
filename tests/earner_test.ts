@@ -141,13 +141,31 @@ Deno.test("settlement: actual revenue is split pro rata by credited waits, at th
   assertEquals((await (await t.me(a)).json()).pending_waits, 1); // new waits wait for the next settlement
 });
 
-Deno.test("earnings: an estimate shows only when an eCPM is configured, at the user share", async () => {
+Deno.test("earnings: no dollar estimate before the first settlement, even with an eCPM configured", async () => {
   const t = mk({ program: { est_ecpm_usd: 4, min_gap_seconds: 0 } });
   const { token } = await (await t.signup()).json();
   for (let i = 0; i < 5; i++) await t.view(token);
   const m = await (await t.me(token)).json();
-  assertEquals(m.est_pending_usd, 0.01); // 5/1000 x $4 x 50%
-  assertEquals(m.program, { share_pct: 50, referral_pct: 10, min_payout_usd: 10, hold_days: 30, daily_cap: 200, min_gap_seconds: 0, est_ecpm_usd: 4 });
+  assertEquals(m.pending_waits, 5);
+  assertEquals(m.est_pending_usd, null); // a guessed eCPM is never shown as money
+  assertEquals(m.rate, null);
+  assertEquals(m.program.est_ecpm_usd, null);
+});
+
+Deno.test("earnings: estimates use the last settlement's actual rate (50% of what the network paid per view)", async () => {
+  const t = mk({ program: { min_gap_seconds: 0 } });
+  const { token } = await (await t.signup()).json();
+  for (let i = 0; i < 4; i++) await t.view(token);
+  t.store.settle("idlen", 0.02); // the network paid $0.02 for those 4 views -> $0.0025 per view to the user
+  for (let i = 0; i < 6; i++) await t.view(token);
+  const m = await (await t.me(token)).json();
+  assertEquals(m.balance_usd, 0.01); // 4 x $0.0025, settled
+  assertEquals(m.pending_waits, 6);
+  assertEquals(m.est_pending_usd, 0.015); // 6 x $0.0025
+  assertEquals(m.rate.per_view_usd, 0.0025);
+  assertEquals(m.rate.per_1000_usd, 2.5);
+  assertEquals(m.rate.source, "settlement");
+  assertEquals(m.program.est_ecpm_usd, 2.5); // older installs read this field: same number as the dashboard
 });
 
 Deno.test("payout email: validated, stored, and only ever shown masked", async () => {

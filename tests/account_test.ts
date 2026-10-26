@@ -1,6 +1,6 @@
 // Vibedough accounts: sign-in email, account page, install-code linking, PayPal, W-9, the earnings gate.
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
-import { createApp, type Program } from "../supabase/functions/goodwait/app.ts";
+import { chatTitle, createApp, type Program } from "../supabase/functions/goodwait/app.ts";
 import { type AuthApi, type Email, normalizeInstallCode, parseTaxForm, validEin, validSsn } from "../supabase/functions/goodwait/accounts.ts";
 import { memStore } from "./memstore.ts";
 
@@ -16,13 +16,14 @@ const W9 = { legal_name: "Ana Lopez", tax_class: "individual", line1: "1 Main St
 function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: boolean; chat?: boolean; chatPerDay?: number; chatCap?: number; replyCost?: number } = {}) {
   const store = memStore({}, opts.program);
   const mail: Email[] = [];
+  const seen: { role: string; content: string }[][] = [];
   const auth: AuthApi = {
     async getUser(t) { const u = USERS[t]; return u ? { ...u, meta: {} } : null; },
     async signInLink(email) { return opts.linkFails ? null : { tokenHash: "th_" + email.length, type: "magiclink", otp: "123456" }; },
   };
   const app = createApp({ store, keys: {}, baseUrl: BASE, salt: "t", auth, appUrl: "https://vibedough.com/app",
     mailer: async (m) => { mail.push(m); return opts.mailOk ?? true; },
-    chat: opts.chat ? async (turns) => ({ text: `echo: ${turns[turns.length - 1].content}`,
+    chat: opts.chat ? async (turns) => (seen.push(turns.map((x) => ({ ...x }))), { text: `echo: ${turns[turns.length - 1].content}`,
       usage: { model: "claude-haiku-5-5", input_tokens: 1000, output_tokens: 400, cache_write_tokens: 0, cache_read_tokens: 0, cost_usd: opts.replyCost ?? 0.0003 } }) : undefined,
     chatPerDay: opts.chatPerDay, chatMonthlyCapUsd: opts.chatCap });
   const call = (path: string, init: RequestInit = {}, ip = "1.1.1.1") =>
@@ -31,7 +32,7 @@ function mk(opts: { program?: Partial<Program>; linkFails?: boolean; mailOk?: bo
     call(path, body === undefined ? { headers: { authorization: `Bearer ${jwt(who)}` } } : { method: "POST", body: JSON.stringify(body), headers: { authorization: `Bearer ${jwt(who)}` } });
   const earner = async (ip = "1.1.1.1") => (await (await call("/earner", { method: "POST", body: "{}" }, ip)).json()).token as string;
   const link = (token: string, code: string, ip = "1.1.1.1") => call("/earner/link", { method: "POST", body: JSON.stringify({ code }), headers: { authorization: `Bearer ${token}` } }, ip);
-  return { store, mail, call, as, earner, link };
+  return { store, mail, call, as, earner, link, seen };
 }
 
 Deno.test("install codes: format, and pasted variants normalize", () => {
@@ -324,4 +325,78 @@ Deno.test("chat cost: Haiku 5.5 list prices, long prompts at the higher tier, ro
   assertEquals(chatCost({ input_tokens: 10_000, output_tokens: 1_000, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.0015); // $0.001 + $0.0005
   assertEquals(chatCost({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 8_000, cache_read_tokens: 10_000 }), 0.0011); // 8K x 0.125 + 10K x 0.01
   assertEquals(chatCost({ input_tokens: 1, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0 }), 0.000001, "never rounds down to free");
+});
+
+Deno.test("saved chats: a reply is saved to the account; reopening resumes with the saved context", async () => {
+  const t = mk({ chat: true });
+  const r1 = await (await t.as("ana", "/account/chat", { message: "  Help me   plan a Next.js app  " })).json();
+  assertEquals(r1.reply, "echo: Help me   plan a Next.js app");
+  assertMatch(r1.chat_id, /^[0-9a-f-]{36}$/);
+  assertEquals(r1.title, "Help me plan a Next.js app");
+  const r2 = await (await t.as("ana", "/account/chat", { message: "Now add auth", chat_id: r1.chat_id })).json();
+  assertEquals(r2.chat_id, r1.chat_id);
+  // The model saw the saved history, not anything the browser sent.
+  assertEquals(t.seen[1], [
+    { role: "user", content: "Help me   plan a Next.js app" },
+    { role: "assistant", content: "echo: Help me   plan a Next.js app" },
+    { role: "user", content: "Now add auth" },
+  ]);
+  const list = await (await t.as("ana", "/account/chats")).json();
+  assertEquals(list.chats.length, 1);
+  assertEquals(list.chats[0].id, r1.chat_id);
+  const open = await (await t.as("ana", `/account/chats/${r1.chat_id}`)).json();
+  assertEquals(open.chat.title, "Help me plan a Next.js app");
+  assertEquals(open.messages.map((m: { role: string }) => m.role), ["user", "assistant", "user", "assistant"]);
+  assertEquals(open.messages[3].content, "echo: Now add auth");
+});
+
+Deno.test("saved chats: newest first, and one account never sees or writes another's chats", async () => {
+  const t = mk({ chat: true });
+  const a = await (await t.as("ana", "/account/chat", { message: "first" })).json();
+  const b = await (await t.as("ana", "/account/chat", { message: "second" })).json();
+  assertEquals((await (await t.as("ana", "/account/chats")).json()).chats.map((c: { title: string }) => c.title), ["second", "first"]);
+  await t.as("ana", "/account/chat", { message: "more", chat_id: a.chat_id });
+  assertEquals((await (await t.as("ana", "/account/chats")).json()).chats.map((c: { title: string }) => c.title), ["first", "second"]);
+  assertEquals((await (await t.as("bo", "/account/chats")).json()).chats, []);
+  assertEquals((await t.as("bo", `/account/chats/${a.chat_id}`)).status, 404);
+  assertEquals((await t.as("bo", "/account/chat", { message: "sneak", chat_id: b.chat_id })).status, 404);
+  assertEquals((await t.as("bo", "/account/chats/delete", { id: a.chat_id })).status, 404);
+  assertEquals((await t.as("ana", "/account/chats/not-a-uuid")).status, 404);
+  assertEquals((await t.call("/account/chats")).status, 401);
+});
+
+Deno.test("saved chats: delete removes the chat and its messages", async () => {
+  const t = mk({ chat: true });
+  const a = await (await t.as("ana", "/account/chat", { message: "delete me" })).json();
+  assertEquals(await (await t.as("ana", "/account/chats/delete", { id: a.chat_id })).json(), { ok: true });
+  assertEquals((await (await t.as("ana", "/account/chats")).json()).chats, []);
+  assertEquals((await t.as("ana", `/account/chats/${a.chat_id}`)).status, 404);
+  assertEquals((await t.as("ana", "/account/chat", { message: "again", chat_id: a.chat_id })).status, 404);
+});
+
+Deno.test("saved chats: a failed reply saves nothing; older pages sending messages[] still get answers, unsaved", async () => {
+  const t = mk({ chat: true, chatPerDay: 1 });
+  await t.as("ana", "/account/chat", { message: "one" });
+  assertEquals((await t.as("ana", "/account/chat", { message: "two" })).status, 429);
+  assertEquals((await (await t.as("ana", "/account/chats")).json()).chats.length, 1);
+  const t2 = mk({ chat: true });
+  const legacy = await (await t2.as("ana", "/account/chat", { messages: [{ role: "user", content: "hi" }] })).json();
+  assertEquals(legacy, { reply: "echo: hi" });
+  assertEquals((await (await t2.as("ana", "/account/chats")).json()).chats, []);
+  assertEquals((await t2.as("ana", "/account/chat", { message: "   " })).status, 400);
+});
+
+Deno.test("web-only: skipping the install shows on the account and can be undone", async () => {
+  const t = mk();
+  assertEquals((await (await t.as("ana", "/account/me")).json()).web_only, false);
+  assertEquals(await (await t.as("ana", "/account/web-only", { on: true })).json(), { ok: true, web_only: true });
+  assertEquals((await (await t.as("ana", "/account/me")).json()).web_only, true);
+  await t.as("ana", "/account/web-only", { on: false });
+  assertEquals((await (await t.as("ana", "/account/me")).json()).web_only, false);
+});
+
+Deno.test("chat titles: first message on one line, trimmed to 60 characters", () => {
+  assertEquals(chatTitle("  a\n b  "), "a b");
+  assertEquals(chatTitle("x".repeat(80)), "x".repeat(57) + "...");
+  assertEquals(chatTitle("   "), "New chat");
 });

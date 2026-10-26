@@ -22,7 +22,12 @@
 //   POST /earner/link     {code} + earner Bearer         -> joins this install to the account that owns the code
 //   POST /account/impression {network, request_id, ad_id?} -> {ok, counted, credited}: a view of an ad the web
 //        chat fetched from Velocity in the browser (after firing Velocity's impression URL), credited to the account
-//   POST /account/chat    {messages: [{role, content}]}  -> {reply} (503 until a model key is set)
+//   POST /account/chat    {message, chat_id?}            -> {reply, chat_id, title}: saved to the account; context is
+//        rebuilt from the chat's saved messages ({messages: [...]} from older pages: answered, not saved)
+//   GET  /account/chats                                  -> {chats: [{id, title, updated_at}]} newest first
+//   GET  /account/chats/<id>                             -> {chat, messages} (404 unless it is this account's)
+//   POST /account/chats/delete {id}                      -> {ok}: deletes the chat and its messages
+//   POST /account/web-only {on}                          -> skip (or un-skip) the Claude Code install on a computer
 // Referrals: POST /earner takes {invite: "<code>"}; the referrer earns 10% of the friend's share,
 // paid out of the house half at settlement (see settle()). Never multi-level.
 //   POST /impression/external {network, site, request_id, ad_id?, earner?} -> {ok, counted, credited}
@@ -47,6 +52,9 @@ export type Program = { user_share_pct: number; est_ecpm_usd: number | null; min
 export type EarnerSummary = { earner_id: string; status: string; credited_total: number; credited_today: number; pending_waits: number; owed_usd: number; paid_usd: number; payout_email: string | null; created_at: Date | string;
   balance_usd: number; credited_usd: number; donated_usd: number; referral_code: string; referrals: number; referral_earned_usd: number; auto_exit: "cash" | "donate"; first_credit_at: Date | string | null };
 export type Ledger = { credited_to_users_usd: number; paid_out_usd: number; donated_usd: number; donation_pending_usd: number; people_paid: number; last_activity_at: Date | string | null };
+export type ChatSummary = { id: string; title: string; created_at: Date | string; updated_at: Date | string };
+export type SavedMessage = { role: "user" | "assistant"; content: string; created_at: Date | string };
+export type SettledRate = { network: string; per_view_usd: number; credited_waits: number; actual_usd: number; period_start: Date | string; period_end: Date | string; settled_at: Date | string };
 export type Draw = { id: string; name: string; prize_usd: number; opens_at: Date | string; closes_at: Date | string; rules_url: string | null };
 export interface Store {
   ensureSite(site: string, origin: string): Promise<boolean>;
@@ -101,6 +109,20 @@ export interface Store {
   // Web chat model spend (USD) since a moment, and one reply's usage.
   chatSpendSince(since: Date): Promise<number>;
   recordChatUsage(row: { account_id: string; model: string; input_tokens: number; output_tokens: number; cache_write_tokens: number; cache_read_tokens: number; cost_usd: number }): Promise<void>;
+  // Saved web chats. Every read and write is scoped to the account, so one person never sees another's chats.
+  listChats(accountId: string, limit: number): Promise<ChatSummary[]>;
+  // The chat's newest `limit` messages, oldest first; null when the chat is not this account's.
+  chatMessages(accountId: string, chatId: string, limit: number): Promise<{ chat: ChatSummary; messages: SavedMessage[] } | null>;
+  createChat(accountId: string, title: string): Promise<ChatSummary>;
+  // Appends messages in order and bumps the chat's updated_at.
+  addChatMessages(chatId: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<void>;
+  // Deletes the chat and its messages. False when it is not this account's.
+  deleteChat(accountId: string, chatId: string): Promise<boolean>;
+  // "Just use the chat" on a computer (no Claude Code install).
+  setWebOnly(accountId: string, on: boolean): Promise<void>;
+  // Your share per view from the newest settlement that credited views (actual network revenue x the user
+  // share / credited views). null before the first settlement. The one rate every estimate uses.
+  settledRate(): Promise<SettledRate | null>;
   rateCount(kind: string, key: string, seconds: number): Promise<number>;
   rateHit(kind: string, key: string): Promise<void>;
   stats(site: string | null): Promise<{ total: { sponsored_waits: number; paid_waits: number; clicks: number; sites: number }; site: null | { site_key: string; name: string | null; sponsored_waits: number; paid_waits: number; clicks: number }; leaderboard: { site_key: string; name: string | null; sponsored_waits: number }[]; impact: Impact; earnings?: Earning[] }>;
@@ -159,6 +181,18 @@ function sessionToken(req: Request): string {
 const PLUGIN_SITE = "claude-code";
 // The site key for views in the Vibedough web chat.
 const WEB_SITE = "vibedough-app";
+// Saved chats: how many show in the list, how many messages a reopened chat shows, how many the model
+// sees as context (the newest), and the longest message kept.
+const CHAT_LIST_MAX = 50;
+const CHAT_SHOW_MAX = 200;
+const CONTEXT_MESSAGES = 20;
+const MESSAGE_MAX = 4000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A chat's title: the start of its first message, on one line.
+export function chatTitle(first: string): string {
+  const t = first.replace(/\s+/g, " ").trim();
+  return (t.length > 60 ? t.slice(0, 57).trimEnd() + "..." : t) || "New chat";
+}
 const SIGNIN_PER_EMAIL_HOUR = 5;
 const SIGNIN_PER_NETWORK_HOUR = 20;
 const LINK_FAILS_PER_HOUR = 10;
@@ -211,6 +245,20 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
     return spend.usd;
   }
   const chatOpen = async () => !!opts.chat && (!opts.chatEnabled || opts.chatEnabled()) && (await chatSpend()) < chatCap;
+
+  // The one rate behind every dollar estimate (dashboard, /earner/me, the Claude Code line): your share
+  // per view from the newest settlement, i.e. 50% of what the network actually paid us for those views.
+  // Cached for a minute. Before the first settlement there is no rate and no dollar estimate anywhere.
+  let rateCache = { at: 0, rate: null as SettledRate | null };
+  async function shareRate() {
+    if (Date.now() - rateCache.at > 60_000) rateCache = { at: Date.now(), rate: await store.settledRate() };
+    return rateCache.rate;
+  }
+  const ratePublic = (r: SettledRate | null) => r
+    ? { per_view_usd: r.per_view_usd, per_1000_usd: money4(r.per_view_usd * 1000), network: r.network, period_start: r.period_start, period_end: r.period_end, settled_at: r.settled_at, source: "settlement" as const }
+    : null;
+  // Pending views x the settled rate; null when nothing has settled yet (never a made-up eCPM).
+  const estPending = (views: number, r: SettledRate | null) => (r ? money4(views * r.per_view_usd) : null);
 
   // One sponsored line: the network chain, then the ad row (credited later, at its impression).
   // paidOnly: people who are told they earn from views (earners, the Claude Code plugin) never get a
@@ -276,12 +324,12 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
     if (!gated) {
       const sums = (await Promise.all(installs.map((i) => store.earnerSummary(i.earner_id)))).filter((x): x is EarnerSummary => !!x);
       const add = (k: keyof EarnerSummary) => money4(sums.reduce((s, x) => s + Number(x[k] || 0), 0));
-      const ecpm = p.est_ecpm_usd === null ? null : Number(p.est_ecpm_usd);
       const pending = sums.reduce((s, x) => s + x.pending_waits, 0);
+      const r = await shareRate();
       earnings = {
         balance_usd: add("balance_usd"), credited_usd: add("credited_usd"), paid_usd: add("paid_usd"), donated_usd: add("donated_usd"),
         views_today: sums.reduce((s, x) => s + x.credited_today, 0), views_total: sums.reduce((s, x) => s + x.credited_total, 0), pending_views: pending,
-        est_pending_usd: ecpm === null ? null : money4((pending / 1000) * ecpm * (Number(p.user_share_pct) / 100)),
+        est_pending_usd: estPending(pending, r), rate: ratePublic(r),
         min_payout_usd: Number(p.min_payout_usd), share_pct: Number(p.user_share_pct),
       };
     }
@@ -290,6 +338,10 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
       installs: plugins.length, installed: lastSeen > fresh, last_seen_at: lastSeen ? new Date(lastSeen).toISOString() : null,
       paypal_email: maskEmail(account.paypal_email), w9: tax ? { on_file: true, tin_type: tax.tin_type, tin_last4: tax.tin_last4, signed_at: tax.signed_at } : { on_file: false },
       payout_ready: payoutReady, earnings_locked: gated, earnings,
+      // Skipped the install ("No Claude Code? Just use the chat"): the computer view opens on the chat.
+      web_only: !!account.web_only_at,
+      // Views today across every install and the web chat, shown even before payout setup (no dollars).
+      views_today: gated ? (await Promise.all(installs.map((i) => store.earnerSummary(i.earner_id)))).reduce((t, x) => t + (x ? x.credited_today : 0), 0) : earnings!.views_today,
       // An opaque id the web chat passes to ad networks as the publisher's user id (never the email).
       ad_user_id: await sha(`ad-user|${account.id}|${salt}`),
       // The web chat only asks for ads while it can answer: no sponsored line on a message that gets no reply.
@@ -407,7 +459,10 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if (!e) return json({ error: "unknown earner" }, 401);
         const [sum, p, draw, accountId] = await Promise.all([store.earnerSummary(e.id), store.program(), store.openDraw(), store.earnerAccount(e.id), store.touchEarner(e.id)]);
         if (!sum) return json({ error: "unknown earner" }, 401);
-        const ecpm = p.est_ecpm_usd === null ? null : Number(p.est_ecpm_usd);
+        const r = await shareRate();
+        // est_ecpm_usd now carries your settled share per 1,000 views (null before the first settlement),
+        // so installs built before the rate field still show the same number as the dashboard.
+        const ecpm = r ? money4(r.per_view_usd * 1000) : null;
         const holdDays = Number(p.hold_days ?? 30);
         const holdFrom = [sum.created_at, sum.first_credit_at].filter(Boolean).map((d) => new Date(d as string).getTime());
         const holdUntil = holdFrom.length === 2 ? new Date(Math.max(...holdFrom) + holdDays * 86400e3).toISOString() : null;
@@ -423,7 +478,8 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           donated_usd: money4(Number(sum.donated_usd)),
           referral_earned_usd: money4(Number(sum.referral_earned_usd)),
           cash_out_from: holdUntil,
-          est_pending_usd: ecpm === null ? null : money4((sum.pending_waits / 1000) * ecpm * (Number(p.user_share_pct) / 100)),
+          est_pending_usd: estPending(sum.pending_waits, r),
+          rate: ratePublic(r),
           draw: draw ? { name: draw.name, prize_usd: Number(draw.prize_usd), closes_at: draw.closes_at, rules_url: draw.rules_url, entries: await store.drawEntries(draw.id, e.id) } : null,
           program: { share_pct: Number(p.user_share_pct), referral_pct: Number(p.referral_pct ?? 10), min_payout_usd: Number(p.min_payout_usd), hold_days: holdDays, daily_cap: p.daily_cap, min_gap_seconds: p.min_gap_seconds, est_ecpm_usd: ecpm },
         }, 200, { "Cache-Control": "no-store" });
@@ -571,6 +627,40 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         return json(await recordExternal({ site: WEB_SITE, network, requestId, adId: b.ad_id, ipHash, origin, earnerId }));
       }
 
+      if (route === "/account/chats" && req.method === "GET") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        return json({ chats: await store.listChats(s.account.id, CHAT_LIST_MAX) }, 200, { "Cache-Control": "no-store" });
+      }
+
+      if (route.startsWith("/account/chats/") && req.method === "GET") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const id = route.slice("/account/chats/".length);
+        if (!UUID_RE.test(id)) return json({ error: "no such chat" }, 404);
+        const c = await store.chatMessages(s.account.id, id, CHAT_SHOW_MAX);
+        if (!c) return json({ error: "no such chat" }, 404);
+        return json(c, 200, { "Cache-Control": "no-store" });
+      }
+
+      if (route === "/account/chats/delete" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const b = await req.json().catch(() => ({}));
+        const id = String(b.id || "");
+        if (!UUID_RE.test(id) || !(await store.deleteChat(s.account.id, id))) return json({ error: "no such chat" }, 404);
+        log(`chat deleted for account ${s.account.id}`);
+        return json({ ok: true });
+      }
+
+      if (route === "/account/web-only" && req.method === "POST") {
+        const s = await signedIn(req);
+        if (s instanceof Response) return s;
+        const b = await req.json().catch(() => ({}));
+        await store.setWebOnly(s.account.id, b.on !== false);
+        return json({ ok: true, web_only: b.on !== false });
+      }
+
       if (route === "/account/chat" && req.method === "POST") {
         const s = await signedIn(req);
         if (s instanceof Response) return s;
@@ -579,9 +669,28 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           return json({ error: capped ? "Chat is paused until the 1st. Your earnings and installs keep working." : "Chat opens soon. Your account is ready; install on your computer to start earning now." }, 503);
         }
         const b = await req.json().catch(() => ({}));
-        const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
-        const turns: ChatTurn[] = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-          .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+        // Saved chats: {message, chat_id?}. The context comes from the chat's saved messages, never the browser.
+        // Older pages still send {messages: [...]}; those replies are answered but not saved.
+        const saved = typeof b.message === "string";
+        let chat: ChatSummary | null = null;
+        let turns: ChatTurn[];
+        if (saved) {
+          const text = String(b.message).trim().slice(0, MESSAGE_MAX);
+          if (!text) return json({ error: "send a message" }, 400);
+          let history: ChatTurn[] = [];
+          if (b.chat_id !== undefined && b.chat_id !== null && b.chat_id !== "") {
+            const id = String(b.chat_id);
+            const c = UUID_RE.test(id) ? await store.chatMessages(s.account.id, id, CONTEXT_MESSAGES) : null;
+            if (!c) return json({ error: "That chat is gone. Start a new one." }, 404);
+            chat = c.chat;
+            history = c.messages.map((m) => ({ role: m.role, content: m.content.slice(0, MESSAGE_MAX) }));
+          }
+          turns = [...history, { role: "user", content: text }];
+        } else {
+          const raw = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
+          turns = raw.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+            .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, MESSAGE_MAX) }));
+        }
         while (turns.length && turns[0].role !== "user") turns.shift();
         if (!turns.length || turns[turns.length - 1].role !== "user") return json({ error: "send a message" }, 400);
         if ((await store.rateCount("chat", s.account.id, 86400)) >= chatPerDay) return json({ error: `That's today's ${chatPerDay} messages. More tomorrow.` }, 429);
@@ -593,9 +702,14 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
           await store.recordChatUsage({ account_id: s.account.id, ...r.usage }).catch((e) => log(`chat usage not recorded: ${(e as Error).message}`));
           spend.usd += r.usage.cost_usd;
         }
-        if ("refused" in r) return json({ reply: "I can't help with that one. Try asking another way." });
         if ("error" in r) { log(`chat error ${r.error}`); return json({ error: "The chat is busy. Try again in a moment." }, 502); }
-        return json({ reply: r.text });
+        const reply = "refused" in r ? "I can't help with that one. Try asking another way." : r.text;
+        if (!saved) return json({ reply });
+        // Save only once there is a reply, so a failed send leaves no half-turn behind.
+        const userText = turns[turns.length - 1].content;
+        if (!chat) chat = await store.createChat(s.account.id, chatTitle(userText));
+        await store.addChatMessages(chat.id, [{ role: "user", content: userText }, { role: "assistant", content: reply.slice(0, 20000) }]);
+        return json({ reply, chat_id: chat.id, title: chat.title });
       }
 
       if (route === "/account/code" && req.method === "POST") {
