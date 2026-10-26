@@ -160,8 +160,9 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
   .who span{display:none}
 }
 body.mobile .tabs{display:flex;gap:6px;background:var(--linen-2);border-radius:12px;padding:4px;margin:0 0 12px}
-body.mobile .tabs button{flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;font:600 15px/1 "Public Sans",sans-serif;color:var(--ink-soft);cursor:pointer}
+body.mobile .tabs button{flex:1;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;line-height:1.1;border:0;border-radius:9px;background:transparent;font:600 15px/1 "Public Sans",sans-serif;color:var(--ink-soft);cursor:pointer}
 body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(14,23,48,.12)}
+body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:var(--brass)}
 @media (prefers-reduced-motion:reduce){.pulse,.skeleton,.live .dot{animation:none}}
 </style>
 </head>
@@ -399,7 +400,7 @@ body.mobile .tabs button[aria-selected=true]{background:#fff;color:var(--ink);bo
   // ------------------------------------------------------------ mobile
   function renderMobile() {
     stopPoll(); stopLive();
-    main.innerHTML = `<div class="tabs" role="tablist"><button role="tab" data-tab="chat" aria-selected="${tab === "chat"}">Chat</button><button role="tab" data-tab="earn" aria-selected="${tab === "earn"}">Earnings</button></div><div id="pane"></div>`;
+    main.innerHTML = `<div class="tabs" role="tablist"><button role="tab" data-tab="chat" aria-selected="${tab === "chat"}" aria-label="Chat here: wait and earn">Chat here<small>wait and earn</small></button><button role="tab" data-tab="earn" aria-selected="${tab === "earn"}">Earnings</button></div><div id="pane"></div>`;
     main.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderMobile(); });
     const pane = document.getElementById("pane");
     if (tab === "earn") {
