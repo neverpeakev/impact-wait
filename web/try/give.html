@@ -36,8 +36,8 @@ h1{font:400 clamp(38px,5.2vw,60px)/1.06 "Young Serif",Georgia,serif;letter-spaci
 form.join{display:flex;gap:10px;max-width:480px}
 form.join input[type=email]{flex:1;min-width:0;font:inherit;font-size:17px;padding:14px 16px;border:1.5px solid #B9C4DA;border-radius:var(--radius);background:#fff;color:var(--ink)}
 form.join input[type=email]:focus{border-color:var(--cobalt);outline:none;box-shadow:0 0 0 3px rgba(43,80,200,.18)}
-button.go{font:600 17px/1 "Public Sans",sans-serif;padding:0 22px;min-height:52px;border:0;border-radius:var(--radius);background:var(--cobalt);color:#fff;cursor:pointer;white-space:nowrap}
-button.go:hover{background:var(--cobalt-deep)}
+button.go,a.go{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-width:260px;font:600 17px/1 "Public Sans",sans-serif;padding:0 22px;min-height:52px;border:0;border-radius:var(--radius);background:var(--cobalt);color:#fff;cursor:pointer;white-space:nowrap}
+button.go:hover,a.go:hover{background:var(--cobalt-deep)}
 button.go[disabled]{opacity:.7;cursor:progress}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .micro{font-size:14px;color:var(--ink-soft);margin:10px 0 0}
@@ -123,7 +123,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   body{font-size:16px}
   .wrap{padding:0 16px}
   form.join{flex-direction:column}
-  button.go{width:100%}
+  button.go,a.go{width:100%}
   .term{font-size:12.5px}
   .term .body{min-height:250px;padding:14px}
   .band .cta{margin-left:0}
@@ -147,14 +147,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
       <div>
         <h1>Every time Claude Code thinks, a good cause gets paid.</h1>
         <p class="sub">Vibedough adds one quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.</p>
-        <div class="joinbox" id="join-hero"><form class="join" novalidate>
-          <label class="hp" aria-hidden="true">Leave this empty<input tabindex="-1" autocomplete="off" name="website"></label>
-          <label for="email-hero" class="hp">Email address</label>
-          <input id="email-hero" type="email" name="email" required autocomplete="email" placeholder="you@company.com" aria-describedby="micro-hero">
-          <button class="go" type="submit">Get early access</button>
-        </form>
-        <p class="msg" role="alert" aria-live="polite"></p>
-        <p class="micro" id="micro-hero">Free. Launching first in Claude Code.</p></div>
+        <div class="joinbox" id="join-hero"><a class="go" href="/app" data-cta>Create free account</a>
+        <p class="micro" id="micro-hero">Free. Works in Claude Code, or chat right in your browser.</p></div>
       </div>
       <div>
         <div class="term" role="img" aria-label="Claude Code thinking, with one sponsored line and your donation total underneath">
@@ -220,14 +214,8 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
 
     <section class="final" aria-labelledby="final">
       <h2 id="final">Your agent is going to think either way.</h2>
-      <div class="joinbox" id="join-final"><form class="join" novalidate>
-          <label class="hp" aria-hidden="true">Leave this empty<input tabindex="-1" autocomplete="off" name="website"></label>
-          <label for="email-final" class="hp">Email address</label>
-          <input id="email-final" type="email" name="email" required autocomplete="email" placeholder="you@company.com" aria-describedby="micro-final">
-          <button class="go" type="submit">Get early access</button>
-        </form>
-        <p class="msg" role="alert" aria-live="polite"></p>
-        <p class="micro" id="micro-final">Free. Launching first in Claude Code.</p></div>
+      <div class="joinbox" id="join-final"><a class="go" href="/app" data-cta>Create free account</a>
+        <p class="micro" id="micro-final">Free. Works in Claude Code, or chat right in your browser.</p></div>
     </section>
   </main>
 
@@ -292,49 +280,22 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
     }, 4000);
   }
 
-  let email = "";
-  function showDone() {
-    document.querySelectorAll(".joinbox").forEach((box) => {
-      box.innerHTML = '<div class="done" role="status"><h3>You\'re on the list.</h3><p>We\'ll email you when Vibedough opens. One more thing, if you have a second:</p>' +
-        '<form class="tools"><fieldset class="chips"><legend>Where do you use AI to code?</legend>' +
-        [["claude-code","Claude Code"],["cursor","Cursor"],["codex","Codex"],["copilot","Copilot"],["chatgpt","ChatGPT"],["claude","Claude.ai"],["gemini","Gemini"],["other","Other"]]
-          .map(([v, l]) => '<label><input type="checkbox" name="t" value="' + v + '"> ' + l + '</label>').join("") +
-        '</fieldset><button class="save" type="submit">Save</button> <span class="msg"></span></form></div>';
-    });
-    document.querySelectorAll("form.tools").forEach((form) => form.addEventListener("submit", async (e) => {
+  // "Create free account": opens the sign-up popup (falls back to /app if auth.js hasn't loaded).
+  // The email still lands in the landing-page funnel as a signup for the A/B readout.
+  let signedIn = false;
+  try { signedIn = !!localStorage.getItem("vd_session"); } catch (_) {}
+  document.querySelectorAll("a[data-cta]").forEach((a) => {
+    if (signedIn) { a.textContent = "Go to your dashboard"; return; }
+    a.addEventListener("click", (e) => {
+      if (!window.VD) return;
       e.preventDefault();
-      const tools = [...form.querySelectorAll("input:checked")].map((x) => x.value);
-      const msg = form.querySelector(".msg");
-      try { const r = await send({ kind: "tools", email, tools }); msg.textContent = r.ok ? "Saved." : "That didn't save. Try once more."; }
-      catch (_) { msg.textContent = "That didn't save. Check your connection and try again."; }
-    }));
-  }
-
-  // Account step: the popup sends their sign-in link right away; the 6-digit code works there too.
-  function openAccount() {
-    if (!window.VD) return;
-    VD.openSignIn({ email, autoSend: true, title: "Create your account", sub: "Free. One tap to confirm your email, then one line to install." });
-  }
-
-  document.querySelectorAll("form.join").forEach((form) => form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = form.querySelector("input[type=email]"), btn = form.querySelector("button.go"), msg = form.parentElement.querySelector(".msg");
-    msg.textContent = ""; msg.classList.remove("err");
-    if (!input.checkValidity()) { msg.textContent = "Enter a valid email address."; msg.classList.add("err"); input.focus(); return; }
-    btn.disabled = true; btn.textContent = "Joining…";
-    try {
-      const r = await send({ kind: "signup", email: input.value, hp: form.querySelector(".hp input").value });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "Something went wrong on our side. Try again in a minute.");
-      email = input.value.trim().toLowerCase();
-      showDone();
-      if (ACCOUNTS) openAccount();
-    } catch (err) {
-      msg.textContent = err.message && err.message !== "Failed to fetch" ? err.message : "Couldn't reach us. Check your connection and try again.";
-      msg.classList.add("err");
-      btn.disabled = false; btn.textContent = "Get early access";
-    }
-  }));
+      VD.openSignIn({
+        title: "Create your free account",
+        sub: "Free. Confirm your email, then install in Claude Code or chat right in your browser.",
+        onEmail: (em) => { send({ kind: "signup", email: em, hp: "" }).catch(() => {}); },
+      });
+    });
+  });
 })();
 </script>
 <script src="/auth.js" defer></script>
