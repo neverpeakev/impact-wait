@@ -114,7 +114,15 @@ ol.steps p,.offer p{margin:0;color:var(--ink-soft)}
 footer{padding:40px 0 56px;border-top:1px solid #D5DDEA;color:var(--ink-soft);font-size:15px}
 footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margin:0 0 8px;max-width:60ch}
 
+.webchat{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center}
+.webchat p{font-size:18px;color:var(--ink-soft);max-width:48ch;margin:0 0 18px}
+.webchat ol{margin:0 0 24px;padding-left:22px;font-size:17px;color:var(--ink)}
+.webchat li{margin:0 0 8px}
+.shot{justify-self:center;margin:0;max-width:340px;width:100%;border-radius:28px;padding:10px;background:#14213D;box-shadow:0 24px 60px rgba(20,33,61,.22)}
+.shot img{display:block;width:100%;height:auto;border-radius:20px}
+.shot figcaption{font-size:13px;color:#B9C4DA;text-align:center;padding:10px 4px 4px}
 @media (max-width:900px){
+  .webchat{grid-template-columns:1fr;gap:32px}
   .hero{grid-template-columns:1fr;gap:36px;padding-top:16px}
   ol.steps,.offer,.privacy{grid-template-columns:1fr;gap:28px}
   section{padding:56px 0}
@@ -177,6 +185,25 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
         <li><h3>Work like normal</h3><p>While the agent thinks, one sponsored line shows under the spinner. It rotates every 15 seconds while you're at the keyboard and stops when you step away.</p></li>
         <li><h3>Get paid</h3><p>Your balance sits in the status line. Cash out to PayPal once you reach $10.</p></li>
       </ol>
+    </section>
+
+    <section aria-labelledby="webchat">
+      <div class="webchat">
+        <div>
+          <h2 id="webchat">No Claude Code? Chat right here.</h2>
+          <p>Skip the install and use the Vibedough chat in any browser, on your phone or laptop. While it thinks, one sponsored line shows above the answer, and your half of the ad revenue shows up under Earnings.</p>
+          <ol>
+            <li>Create your free account.</li>
+            <li>Tap <b>Skip, just use the chat</b>.</li>
+            <li>Ask anything. Your chats are saved, so you can pick up where you left off.</li>
+          </ol>
+          <a class="go" href="/app" data-cta>Create free account</a>
+        </div>
+        <figure class="shot">
+          <picture><source srcset="/img/chat-phone.webp" type="image/webp"><img src="/img/chat-phone.png" width="640" height="580" loading="lazy" alt="The Vibedough chat on a phone: a question, one sponsored line above the answer, and Thinking while the reply loads."></picture>
+          <figcaption>A real chat on a phone. The sponsored line shows while it thinks.</figcaption>
+        </figure>
+      </div>
     </section>
 
     <section aria-labelledby="offer">
