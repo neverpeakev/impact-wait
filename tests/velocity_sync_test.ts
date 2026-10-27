@@ -179,3 +179,16 @@ Deno.test("junk rows from Velocity are skipped, not stored", async () => {
   await createSync({ db: m.db, fetch: velocity([{ items: junk, total: 3 }]).f, now: NOW })(post());
   assertEquals(m.daily.size, 1);
 });
+
+Deno.test("the vibedough.com web unit records its own actual under vibedough-app, apart from claude-code", async () => {
+  const m = memDb();
+  const rows = [...ROWS, { date: "2026-10-20", ad_unit_key: "aae252cd6ea3", ad_unit_name: "vibedough-web-chat", revenue: 0.012, impressions: 2, clicks: 0 }];
+  const res = await createSync({ db: m.db, fetch: velocity([{ items: rows, total: 4 }]).f, now: NOW })(post());
+  const j = await res.json();
+  assertEquals(j.goodwait.impressions, 14);
+  assertEquals(j.sites["vibedough-app"].impressions, 2);
+  const web = m.earnings.filter((e) => e.site_key === "vibedough-app");
+  assertEquals(web.length, 1);
+  assertEquals(web[0].earned_usd, 0.012);
+  assertEquals(m.earnings.filter((e) => e.site_key === "claude-code")[0].earned_usd, 0.07);
+});

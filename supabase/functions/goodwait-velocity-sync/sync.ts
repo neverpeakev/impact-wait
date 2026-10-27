@@ -26,6 +26,9 @@ export const VELOCITY_API = "https://dashboard.velocity.io/api/public/v1";
 // Goodwait's Velocity ad units and the site key their earnings show under.
 export const GOODWAIT_UNITS = ["e7b24fe95681"];
 export const GOODWAIT_SITE = "claude-code";
+// Every site key with its own Velocity ad unit(s). vibedough-web-chat (aae252cd6ea3) is the
+// vibedough.com web chat's unit on the Web SDK, reported under the vibedough.com site.
+export const SITE_UNITS: Record<string, string[]> = { [GOODWAIT_SITE]: GOODWAIT_UNITS, "vibedough-app": ["aae252cd6ea3"] };
 
 const notFound = () => new Response("Not Found", { status: 404 });
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -91,17 +94,23 @@ export function createSync(opts: { db: SyncDb; fetch?: typeof fetch; now?: () =>
       }
 
       await db.upsertDaily(rows);
-      const t = await db.totals(GOODWAIT_UNITS);
-      const last = await db.lastEarning("velocity", GOODWAIT_SITE);
-      const changed = !last || Math.abs(Number(last.earned_usd) - t.revenue) > 1e-9 || Number(last.paid_waits ?? -1) !== t.impressions;
-      // A first actual is only worth recording once there is Goodwait traffic.
-      const wrote = changed && (!!last || t.impressions > 0 || t.revenue > 0);
-      if (wrote) {
-        await db.insertEarning({ network: "velocity", site_key: GOODWAIT_SITE, earned_usd: Math.round(t.revenue * 1e6) / 1e6, paid_waits: t.impressions, clicks: t.clicks, as_of: lastUpdated || to.toISOString(), source: "velocity-api", note: `units ${GOODWAIT_UNITS.join(",")}, lifetime` });
+      const sites: Record<string, Totals> = {};
+      let wrote = false;
+      for (const [site, units] of Object.entries(SITE_UNITS)) {
+        const t = await db.totals(units);
+        sites[site] = t;
+        const last = await db.lastEarning("velocity", site);
+        const changed = !last || Math.abs(Number(last.earned_usd) - t.revenue) > 1e-9 || Number(last.paid_waits ?? -1) !== t.impressions;
+        // A first actual is only worth recording once the site has traffic.
+        if (changed && (!!last || t.impressions > 0 || t.revenue > 0)) {
+          await db.insertEarning({ network: "velocity", site_key: site, earned_usd: Math.round(t.revenue * 1e6) / 1e6, paid_waits: t.impressions, clicks: t.clicks, as_of: lastUpdated || to.toISOString(), source: "velocity-api", note: `units ${units.join(",")}, lifetime` });
+          wrote = true;
+        }
       }
+      const t = sites[GOODWAIT_SITE];
       await db.logRun({ ok: true, rows: rows.length, note: `${isoDay(from)}..${isoDay(to)}${wrote ? " earnings updated" : ""}` });
       log(`velocity sync ok rows=${rows.length} goodwait_impressions=${t.impressions}`);
-      return json({ ok: true, rows: rows.length, goodwait: t, earnings_updated: wrote });
+      return json({ ok: true, rows: rows.length, goodwait: t, sites, earnings_updated: wrote });
     } catch (e) {
       const note = (e as Error).name === "AbortError" ? "velocity timeout" : String((e as Error).message || e).slice(0, 120);
       await db.logRun({ ok: false, rows: 0, note }).catch(() => {});

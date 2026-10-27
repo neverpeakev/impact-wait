@@ -112,6 +112,7 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
 .bubble.ai{align-self:flex-start;background:#fff;border-bottom-left-radius:6px}
 .bubble.ai pre{background:var(--term);color:var(--term-text);padding:10px;border-radius:8px;overflow-x:auto;font:400 13px/1.5 "JetBrains Mono",monospace;white-space:pre}
 .slot{display:contents}
+.vslot{display:flex;flex-direction:column}
 .thinking{align-self:flex-start;color:var(--ink-soft);font-size:14px;display:flex;align-items:center;gap:8px}
 .sponsor{align-self:stretch;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;text-decoration:none;color:var(--ink);background:#fff;border-left:3px solid #6E8BFF;border-radius:10px;padding:10px 12px;font-size:14px}
 .sponsor .tag{font:600 10.5px/1.6 "Public Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#0E1730;background:#8EA6FF;border-radius:4px;padding:1px 6px}
@@ -422,9 +423,88 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
   // Minimal formatting: fenced code blocks, everything else as text.
   const fmt = (t) => esc(t).replace(/```[a-z0-9]*\n?([\s\S]*?)```/gi, "<pre>$1</pre>");
 
-  // ------------------------------------------------------------ Velocity (called from this browser)
-  // Velocity serves ads only to calls made from the viewer's own device. The ad unit is registered to
-  // impact-wait.vercel.app, the same deployment www.vibedough.com serves, so that is the domain we report.
+  // ------------------------------------------------------------ Velocity Web SDK (default)
+  // Velocity's Web SDK, as their integration guide prescribes: one instance per page session, init once,
+  // loadNativeAd into the slot, the SDK tracks the impression (50% in view) and the click itself, and
+  // cleanup() when the ad goes. We render the line ourselves (our look); the SDK owns all tracking.
+  // Reported site: vibedough.com (the site registered and approved in Velocity, ad unit
+  // vibedough-web-chat). siteUrl never carries the query string or hash: sign-in tokens can ride on them.
+  // The old direct-gateway path stays behind ?vlc=raw until the SDK path is confirmed paying.
+  const VSDK = { src: "https://cdn.vlcapi.net/web-sdk/v-0.11.0/velocity-sdk-0.11.0.min.js",
+    sri: "sha384-Tz06NPacx+2BC0aGezuUL6rXggJ1V3jdKdcGtIYBQuY2eQ9VqIFJ9paGxH6BVETG",
+    key: "b9fb08c9ea6c", unit: "aae252cd6ea3", ms: 8000 };
+  const vlcMode = (() => { try { return new URLSearchParams(location.search).get("vlc") === "raw" ? "raw" : "sdk"; } catch (_) { return "sdk"; } })();
+  const vlcDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname); // mock ads locally, never in production
+  const vlcSiteUrl = () => (/(^|\.)vibedough\.com$/.test(location.hostname) ? "https://vibedough.com" : location.origin) + location.pathname;
+  let sdkReady = null, sdkFailedAt = 0, sdkCleanup = null;
+  function loadSdkScript() {
+    if (window.VelocitySDK) return Promise.resolve(window.VelocitySDK);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = VSDK.src; s.integrity = VSDK.sri; s.crossOrigin = "anonymous"; s.async = true;
+      s.onload = () => (window.VelocitySDK ? resolve(window.VelocitySDK) : reject(new Error("no VelocitySDK")));
+      s.onerror = () => reject(new Error("sdk script failed"));
+      document.head.appendChild(s);
+    });
+  }
+  // Resolves to the initialized SDK, or null. Init runs once; a failure is retried after a minute.
+  function velocitySdk() {
+    if (!sdkReady) {
+      if (sdkFailedAt && Date.now() - sdkFailedAt < 60000) return Promise.resolve(null);
+      sdkReady = loadSdkScript().then(async (VelocitySDK) => {
+        const sdk = new VelocitySDK({ publisherKey: VSDK.key, siteUrl: vlcSiteUrl(), timeout: VSDK.ms, ...(vlcDev ? { devMode: true } : {}) });
+        // CCPA: honor Global Privacy Control as a "Do Not Sell or Share" opt-out (we have no CMP).
+        if (navigator.globalPrivacyControl === true) sdk.setDoNotSell(true);
+        if (acct && acct.ad_user_id) sdk.setPublisherUserId(String(acct.ad_user_id));
+        const r = await sdk.init();
+        if (!r || !r.success) throw new Error((r && r.error && r.error.message) || "init failed");
+        window.__vdVelocity = { mode: "sdk", init: "ok", site: vlcSiteUrl(), unit: VSDK.unit, dev: vlcDev, loads: [] };
+        return sdk;
+      }).catch((e) => {
+        window.__vdVelocity = { mode: "sdk", init: "failed", error: String(e && e.message || e) };
+        sdkReady = null; sdkFailedAt = Date.now(); return null;
+      });
+    }
+    return sdkReady;
+  }
+  const vlcNonce = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => x.toString(16).padStart(2, "0")).join("");
+  // One SDK-tracked ad in `slot` for this message. The view credits the account when the SDK fires it.
+  async function showSponsorSdk(slot, log, query) {
+    const sdk = await velocitySdk();
+    if (!sdk || !slot.isConnected) return;
+    if (sdkCleanup) { try { sdkCleanup(); } catch (_) {} sdkCleanup = null; } // one live ad at a time
+    const target = document.createElement("div");
+    target.className = "vslot";
+    slot.appendChild(target);
+    const ref = "sdk-" + vlcNonce(); // our dedup key for this ad's one view
+    const diag = window.__vdVelocity && window.__vdVelocity.loads;
+    const res = await sdk.loadNativeAd({ target, adUnitId: VSDK.unit, prompt: query,
+      additionalContext: mobile ? "A person chatting with an AI assistant on their phone." : "A person chatting with an AI assistant in their web browser." }, {
+      onAdImpression: (ad) => {
+        if (diag) diag.push({ ref, event: "impression", adId: ad && ad.adId });
+        VD.api("/account/impression", { network: "velocity", request_id: ref, ad_id: (ad && ad.adId) || null }).then(() => setTimeout(refreshEarnings, 1500)).catch(() => {});
+      },
+      onAdClicked: () => { if (diag) diag.push({ ref, event: "click" }); },
+    }).catch((e) => ({ success: false, error: e }));
+    if (!res || !res.success) { if (diag) diag.push({ ref, event: "no-fill", error: String(res && res.error && (res.error.code || res.error.message) || "") }); target.remove(); return; }
+    const a = res.data.adData || {};
+    const headline = String(a.title || a.advertiserName || "");
+    if (!headline || !target.isConnected) { res.data.cleanup(); target.remove(); return; }
+    if (diag) diag.push({ ref, event: "loaded", adId: a.adId, title: headline });
+    sdkCleanup = res.data.cleanup;
+    // The SDK owns the click on `target`: it opens the advertiser page and counts it. adData carries no
+    // click URL, so the line is a keyboard-reachable link-role element, not an <a href>.
+    const line = sponsorEl({ label: a.sponsoredLabel || "Sponsored", brand: a.advertiserName || "", headline, cta: a.callToAction || "Learn more", clickUrl: "" });
+    line.removeAttribute("href"); line.removeAttribute("target");
+    line.setAttribute("role", "link"); line.tabIndex = 0; line.style.cursor = "pointer";
+    line.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); line.click(); } });
+    target.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ------------------------------------------------------------ Velocity direct gateway (?vlc=raw only)
+  // The pre-SDK path: calls Velocity's gateway from this browser and fires the impression URL itself.
+  // Kept as a fallback flag only; its views priced at ~$0 in Velocity's reporting.
   const VLC = { gw: "https://gw.vlcapi.net", key: "b9fb08c9ea6c", unit: "e7b24fe95681", domain: "impact-wait.vercel.app", ms: 2500 };
   // Our own session id until Velocity's /init hands back its own.
   let vlcSession = "vd_" + Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, "0")).join("");
@@ -487,6 +567,7 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
   // pay nobody). A view counts after a full second on screen with the page in front.
   async function showSponsor(slot, log, query) {
     if (!acct || acct.chat_open === false) return;
+    if (vlcMode === "sdk") return showSponsorSdk(slot, log, query);
     const v = await velocityAd(query);
     if (!v) return;
     const el = sponsorEl(v);
