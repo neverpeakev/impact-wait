@@ -9,6 +9,9 @@
 <meta property="og:description" content="One quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -27,6 +30,17 @@ a{color:var(--cobalt)}
 header.top{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
 .logo{display:flex;align-items:center;gap:10px;font:400 24px/1 "Young Serif",Georgia,serif;color:var(--ink);text-decoration:none}
 .logo svg{width:30px;height:30px}
+/* Wordmark: the o in "dough" is a cookie that turns slowly while its chips pulse, like a thinking indicator. */
+.logo.wm{display:inline-block;white-space:nowrap}
+.wm .o{display:inline-block;width:.54em;height:.54em;margin:0 .025em 0 .03em;vertical-align:-.025em}
+.wm .o svg{display:block;width:100%;height:100%;overflow:visible}
+.wm .spin{transform-origin:12px 12px;animation:vd-spin 10s linear infinite}
+.wm .chip{transform-box:fill-box;transform-origin:center;animation:vd-chip 1.6s ease-in-out infinite}
+.wm .chip:nth-of-type(2){animation-delay:.27s}
+.wm .chip:nth-of-type(3){animation-delay:.54s}
+@keyframes vd-spin{to{transform:rotate(360deg)}}
+@keyframes vd-chip{0%,55%,100%{opacity:.62;transform:scale(.86)}25%{opacity:1;transform:scale(1.1)}}
+@media (prefers-reduced-motion:reduce){.wm .spin,.wm .chip{animation:none}}
 .top-cta{font-weight:600;font-size:15px;text-decoration:none;color:var(--ink);border-bottom:2px solid var(--brass);padding-bottom:2px}
 
 .hero{display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center;padding:40px 0 72px}
@@ -143,10 +157,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
 <body data-variant="give">
 <div class="wrap">
   <header class="top">
-    <a class="logo" href="#" aria-label="Vibedough">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12.5 12.5 8.5 4.5l6.2 5.2Z" fill="#14213D"/><path d="M19.5 12.5l4-8-6.2 5.2Z" fill="#14213D"/><path d="M9.5 13.5c1.6-1.4 4-2 6.5-2s4.9.6 6.5 2c3 2.6 4.6 6.2 4 9.3-.6 3.2-4.6 5.2-10.5 5.2S6.1 26 5.5 22.8c-.6-3.1 1-6.7 4-9.3Z" fill="#2B50C8"/><ellipse cx="16" cy="11.2" rx="3.2" ry="2.1" fill="#B8892B"/></svg>
-      vibedough
-    </a>
+    <a class="logo wm" href="#" aria-label="Vibedough"><span aria-hidden="true">vibed</span><span class="o" aria-hidden="true"><svg viewBox="0 0 24 24"><g class="spin"><circle cx="12" cy="12" r="11.5" fill="#B8892B"/><circle cx="12" cy="12" r="9.6" fill="#D9A84E"/><circle cx="9.6" cy="16.8" r="1.2" fill="#14213D"/><ellipse class="chip" cx="7.4" cy="11" rx="2.8" ry="2.4" fill="#14213D"/><ellipse class="chip" cx="13.4" cy="6.9" rx="2.4" ry="2.1" fill="#14213D"/><ellipse class="chip" cx="15.9" cy="14.4" rx="2.9" ry="2.5" fill="#14213D"/></g></svg></span><span aria-hidden="true">ugh</span></a>
     <a class="top-cta" href="#join-final" id="top-cta">Get early access</a>
   </header>
 
