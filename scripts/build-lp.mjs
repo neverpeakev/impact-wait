@@ -115,13 +115,13 @@ header.top{display:flex;align-items:center;justify-content:space-between;padding
 .logo.wm{display:inline-block;white-space:nowrap}
 .wm .o{display:inline-block;width:.54em;height:.54em;margin:0 .025em 0 .03em;vertical-align:-.025em}
 .wm .o svg{display:block;width:100%;height:100%;overflow:visible}
-.wm .spin{transform-origin:12px 12px;animation:vd-spin 10s linear infinite}
-.wm .chip{transform-box:fill-box;transform-origin:center;animation:vd-chip 1.6s ease-in-out infinite}
-.wm .chip:nth-of-type(2){animation-delay:.27s}
-.wm .chip:nth-of-type(3){animation-delay:.54s}
+.wm .vd-turn{transform-origin:12px 12px;animation:vd-spin 10s linear infinite}
+.wm .vd-chip{transform-box:fill-box;transform-origin:center;animation:vd-chip 1.6s ease-in-out infinite}
+.wm .vd-chip:nth-of-type(2){animation-delay:.27s}
+.wm .vd-chip:nth-of-type(3){animation-delay:.54s}
 @keyframes vd-spin{to{transform:rotate(360deg)}}
 @keyframes vd-chip{0%,55%,100%{opacity:.62;transform:scale(.86)}25%{opacity:1;transform:scale(1.1)}}
-@media (prefers-reduced-motion:reduce){.wm .spin,.wm .chip{animation:none}}
+@media (prefers-reduced-motion:reduce){.wm .vd-turn,.wm .vd-chip{animation:none}}
 .top-cta{font-weight:600;font-size:15px;text-decoration:none;color:var(--ink);border-bottom:2px solid var(--brass);padding-bottom:2px}
 
 .hero{display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center;padding:40px 0 72px}
@@ -230,7 +230,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
 <body data-variant="${key}">
 <div class="wrap">
   <header class="top">
-    <a class="logo wm" href="#" aria-label="${BRAND}"><span aria-hidden="true">vibed</span><span class="o" aria-hidden="true"><svg viewBox="0 0 24 24"><g class="spin"><circle cx="12" cy="12" r="11.5" fill="#B8892B"/><circle cx="12" cy="12" r="9.6" fill="#D9A84E"/><circle cx="9.6" cy="16.8" r="1.2" fill="#14213D"/><ellipse class="chip" cx="7.4" cy="11" rx="2.8" ry="2.4" fill="#14213D"/><ellipse class="chip" cx="13.4" cy="6.9" rx="2.4" ry="2.1" fill="#14213D"/><ellipse class="chip" cx="15.9" cy="14.4" rx="2.9" ry="2.5" fill="#14213D"/></g></svg></span><span aria-hidden="true">ugh</span></a>
+    <a class="logo wm" href="#" aria-label="${BRAND}"><span aria-hidden="true">vibed</span><span class="o" aria-hidden="true"><svg viewBox="0 0 24 24"><g class="vd-turn"><circle cx="12" cy="12" r="11.5" fill="#B8892B"/><circle cx="12" cy="12" r="9.6" fill="#D9A84E"/><circle cx="9.6" cy="16.8" r="1.2" fill="#14213D"/><ellipse class="vd-chip" cx="7.4" cy="11" rx="2.8" ry="2.4" fill="#14213D"/><ellipse class="vd-chip" cx="13.4" cy="6.9" rx="2.4" ry="2.1" fill="#14213D"/><ellipse class="vd-chip" cx="15.9" cy="14.4" rx="2.9" ry="2.5" fill="#14213D"/></g></svg></span><span aria-hidden="true">ugh</span></a>
     <a class="top-cta" href="#join-final" id="top-cta">Get early access</a>
   </header>
 
