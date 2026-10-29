@@ -221,6 +221,9 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
     VD.mountSignIn(document.getElementById("si"), { title: "Sign in to Vibedough", sub: "New here? This creates your free account.", onSignedIn: load });
   }
 
+  // The plugin is now "vibedough"; an older API build may still return the goodwait install line.
+  function installCmd() { return String((acct && acct.install_command) || "").replace("plugin install goodwait ", "plugin install vibedough "); }
+
   async function load() {
     const r = await VD.api("/account/me");
     if (r.status === 401) return signedOutView();
@@ -260,11 +263,11 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
           <li><div><b>Add Vibedough</b> with the command below.</div></li>
         </ol>
       </details>
-      <div class="term"><div class="bar"><span>terminal</span><button class="copy" type="button" data-copy="${esc(acct.install_command)}">Copy</button></div>
-        <div class="cmd"><span class="p">$ </span>${esc(acct.install_command).replace(esc(acct.install_code), `<span class="code">${esc(acct.install_code)}</span>`)}</div></div>
+      <div class="term"><div class="bar"><span>terminal</span><button class="copy" type="button" data-copy="${esc(installCmd())}">Copy</button></div>
+        <div class="cmd"><span class="p">$ </span>${esc(installCmd()).replace(esc(acct.install_code), `<span class="code">${esc(acct.install_code)}</span>`)}</div></div>
       <ol class="how">
         <li><div><b>Paste it in your terminal</b> and press Enter.</div></li>
-        <li><div><b>Start Claude Code</b> (or type <code>/reload-plugins</code> if it's already open).</div></li>
+        <li><div><b>Start Claude Code</b> (or type <code>/reload-plugins</code> if it's already open). If the install says some <i>userConfig options not yet set</i>, that's fine: they all have working defaults.</div></li>
         <li><div><b>That's it.</b> This page updates by itself when your install checks in.</div></li>
       </ol>
       <div class="waiting" role="status"><span class="pulse" aria-hidden="true"></span>Waiting for your install…</div>
@@ -370,7 +373,7 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
       <button class="linkbtn" type="button" data-go="install">Show the install line</button></section>`;
     return `<section class="card" aria-labelledby="code-h"><h2 id="code-h">Your install code</h2>
       <p style="margin:6px 0 10px"><span class="chip">${esc(acct.install_code)}</span></p>
-      <p class="small muted" style="margin:0 0 10px">Installing on another computer? Use <button class="linkbtn" type="button" data-copy="${esc(acct.install_command)}">the install line</button> there too. ${acct.installs ? `${num(acct.installs)} install${acct.installs === 1 ? "" : "s"} linked.` : ""}</p>
+      <p class="small muted" style="margin:0 0 10px">Installing on another computer? Use <button class="linkbtn" type="button" data-copy="${esc(installCmd())}">the install line</button> there too. ${acct.installs ? `${num(acct.installs)} install${acct.installs === 1 ? "" : "s"} linked.` : ""}</p>
       <button class="linkbtn small" type="button" data-go="rotate">Get a new code</button> <span class="small muted">(if someone else saw this one)</span></section>`;
   }
 

@@ -138,5 +138,5 @@ export function welcomeEmail(to: string, installCode: string, appUrl: string, in
 }
 
 export function installCommand(code: string): string {
-  return `claude plugin install goodwait --marketplace neverpeakev/vibedough-claude-code --config accountCode=${code}`;
+  return `claude plugin install vibedough --marketplace neverpeakev/vibedough-claude-code --config accountCode=${code}`;
 }
