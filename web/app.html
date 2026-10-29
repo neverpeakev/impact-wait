@@ -156,6 +156,13 @@ ul.steps>li:first-child{border-top:0;padding-top:4px}
 .chatcard .chat{height:calc(100dvh - 190px);min-height:480px}
 .chatcard .bubble.ai,.chatcard .sponsor,.chatcard .notice{background:var(--linen)}
 .skip{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}
+.prereq{margin:0 0 18px;border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:#fff}
+.prereq summary{cursor:pointer;font-weight:600;list-style-position:outside}
+.prereq[open] summary{margin-bottom:12px}
+.prereq .term{margin:8px 0 4px;box-shadow:none}
+.prereq .term .cmd{padding:12px 14px}
+.prereq ol.how{margin:0}
+.prereq code{white-space:nowrap}
 /* Live earnings */
 .live{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-soft);margin:2px 0 14px}
 .live .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:p 2s infinite;flex:none}
@@ -242,6 +249,16 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
     main.innerHTML = `<div class="grid"><div>
       <h1>One line and you're earning.</h1>
       <p class="lead">Paste this into your terminal. It adds Vibedough to Claude Code and links it to your account with your code.</p>
+      <details class="prereq"><summary>Don't have Claude Code yet? Set it up first (about 2 minutes)</summary>
+        <ol class="how">
+          <li><div><b>Install Claude Code.</b> Open Terminal (on a Mac, press Cmd+Space and type Terminal), paste this and press Enter. It shows no progress while it downloads.
+            <div class="term"><div class="bar"><span>Mac or Linux</span><button class="copy" type="button" data-copy="curl -fsSL https://claude.ai/install.sh | bash">Copy</button></div><div class="cmd"><span class="p">$ </span>curl -fsSL https://claude.ai/install.sh | bash</div></div>
+            <span class="small muted">On Windows, use PowerShell instead: <code>irm https://claude.ai/install.ps1 | iex</code></span></div></li>
+          <li><div><b>Check it worked.</b> Open a new terminal window and run <code>claude --version</code>. You should see a version number.</div></li>
+          <li><div><b>Sign in.</b> Run <code>claude</code> and follow the browser prompt. Claude Code needs a paid Claude plan (Pro, Max, Team or Enterprise). Then type <code>/exit</code>.</div></li>
+          <li><div><b>Add Vibedough</b> with the command below.</div></li>
+        </ol>
+      </details>
       <div class="term"><div class="bar"><span>terminal</span><button class="copy" type="button" data-copy="${esc(acct.install_command)}">Copy</button></div>
         <div class="cmd"><span class="p">$ </span>${esc(acct.install_command).replace(esc(acct.install_code), `<span class="code">${esc(acct.install_code)}</span>`)}</div></div>
       <ol class="how">
