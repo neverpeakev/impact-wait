@@ -138,7 +138,7 @@
       btn.disabled = true; btn.textContent = "Sending…";
       try {
         if (o.onEmail) o.onEmail(email);
-        const r = await fetch(API + "/auth/email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+        const r = await fetch(API + "/auth/email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, source: window.VDA ? VDA.source() : null }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || "We couldn't send your link. Try again in a minute.");
         showCode(host, email, o);

@@ -45,6 +45,7 @@ header.top{display:flex;align-items:center;justify-content:space-between;padding
 
 .hero{display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center;padding:40px 0 72px}
 h1{font:400 clamp(38px,5.2vw,60px)/1.06 "Young Serif",Georgia,serif;letter-spacing:-.01em;margin:0 0 20px;max-width:15ch}
+.invite{display:inline-block;margin:0 0 14px;font-size:14px;font-weight:600;color:var(--ink);background:#fff;border:1.5px solid var(--brass);border-radius:999px;padding:5px 12px}
 .sub{font-size:19px;color:var(--ink-soft);max-width:46ch;margin:0 0 28px}
 
 form.join{display:flex;gap:10px;max-width:480px}
@@ -164,6 +165,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   <main>
     <div class="hero">
       <div>
+        <p class="invite" data-invite hidden></p>
         <h1>Every time Claude Code thinks, you're entered to win.</h1>
         <p class="sub">Vibedough adds one quiet sponsored line under the spinner while your agent works. Every paid view is a free entry in our $1,000 launch draw.</p>
         <div class="joinbox" id="join-hero"><a class="go" href="/app" data-cta>Create free account</a>
@@ -289,7 +291,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   }
   const q = new URLSearchParams(location.search);
   const utm = {};
-  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid","msclkid","ttclid","rdt_cid"].forEach((k) => { const v = q.get(k); if (v) utm[k] = v; });
+  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid","msclkid","ttclid","rdt_cid","via"].forEach((k) => { const v = q.get(k); if (v) utm[k] = v; });
   const ref = document.referrer && !document.referrer.startsWith(location.origin) ? document.referrer : "";
 
   const send = (body) => fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant: VARIANT, session, utm, ref, ...body }), keepalive: true });
@@ -325,6 +327,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   document.querySelectorAll("a[data-cta]").forEach((a) => {
     if (signedIn) { a.textContent = "Go to your dashboard"; return; }
     a.addEventListener("click", (e) => {
+      if (window.VDA) VDA.track("cta", VARIANT);
       if (!window.VD) return;
       e.preventDefault();
       VD.openSignIn({
@@ -336,6 +339,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   });
 })();
 </script>
+<script src="/attrib.js"></script>
 <script src="/auth.js" defer></script>
 </body>
 </html>

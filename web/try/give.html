@@ -45,6 +45,7 @@ header.top{display:flex;align-items:center;justify-content:space-between;padding
 
 .hero{display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center;padding:40px 0 72px}
 h1{font:400 clamp(38px,5.2vw,60px)/1.06 "Young Serif",Georgia,serif;letter-spacing:-.01em;margin:0 0 20px;max-width:15ch}
+.invite{display:inline-block;margin:0 0 14px;font-size:14px;font-weight:600;color:var(--ink);background:#fff;border:1.5px solid var(--brass);border-radius:999px;padding:5px 12px}
 .sub{font-size:19px;color:var(--ink-soft);max-width:46ch;margin:0 0 28px}
 
 form.join{display:flex;gap:10px;max-width:480px}
@@ -164,6 +165,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   <main>
     <div class="hero">
       <div>
+        <p class="invite" data-invite hidden></p>
         <h1>Every time Claude Code thinks, a good cause gets paid.</h1>
         <p class="sub">Vibedough adds one quiet sponsored line under the spinner while your agent works. Half the ad revenue goes to a cause you pick.</p>
         <div class="joinbox" id="join-hero"><a class="go" href="/app" data-cta>Create free account</a>
@@ -180,7 +182,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
             </div>
             <div class="band">
               <div class="ad"><span class="tag">Sponsored</span><span class="brand">Lumen DB</span><span class="line">Postgres that sleeps when you do.</span><span class="cta">Try it →</span></div>
-              <div class="earn"><span class="lab">Raised for your cause</span><span class="val">$40.12</span><span class="esub">16,715 views so far</span></div>
+              <div class="earn"><span class="lab">Raised for your cause</span><span class="val">$4.18</span><span class="esub">8,200 views so far</span></div>
             </div>
           </div>
         </div>
@@ -268,7 +270,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   const ENDPOINT = "https://mvnfgrydpdwaatkcsrdd.supabase.co/functions/v1/lp";
   const VARIANT = "give";
   const ADS = [["Lumen DB","Postgres that sleeps when you do.","Try it"],["Shipyard","A preview deploy for every branch.","Start free"],["Tracewell","Find the slow query before your users do.","See demo"],["Inkpad","Docs your whole team actually updates.","Try it"]];
-  const METERS = [["Raised for your cause","$40.12","16,715 views so far"],["Raised for your cause","$40.12","16,716 views so far"],["Raised for your cause","$40.12","16,717 views so far"],["Raised for your cause","$40.12","16,718 views so far"],["Raised for your cause","$40.13","16,719 views so far"]];
+  const METERS = [["Raised for your cause","$4.18","8,200 views so far"],["Raised for your cause","$4.18","8,201 views so far"],["Raised for your cause","$4.18","8,202 views so far"],["Raised for your cause","$4.18","8,203 views so far"],["Raised for your cause","$4.18","8,204 views so far"]];
   const acctParam = new URLSearchParams(location.search).get("acct");
   const ACCOUNTS = acctParam === "1" || (true && acctParam !== "0");
   // Signed in already: the header goes to the dashboard. Otherwise it opens the sign-in popup.
@@ -289,7 +291,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   }
   const q = new URLSearchParams(location.search);
   const utm = {};
-  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid","msclkid","ttclid","rdt_cid"].forEach((k) => { const v = q.get(k); if (v) utm[k] = v; });
+  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid","msclkid","ttclid","rdt_cid","via"].forEach((k) => { const v = q.get(k); if (v) utm[k] = v; });
   const ref = document.referrer && !document.referrer.startsWith(location.origin) ? document.referrer : "";
 
   const send = (body) => fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant: VARIANT, session, utm, ref, ...body }), keepalive: true });
@@ -325,6 +327,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   document.querySelectorAll("a[data-cta]").forEach((a) => {
     if (signedIn) { a.textContent = "Go to your dashboard"; return; }
     a.addEventListener("click", (e) => {
+      if (window.VDA) VDA.track("cta", VARIANT);
       if (!window.VD) return;
       e.preventDefault();
       VD.openSignIn({
@@ -336,6 +339,7 @@ footer .def{font:400 18px/1.5 "Young Serif",Georgia,serif;color:var(--ink);margi
   });
 })();
 </script>
+<script src="/attrib.js"></script>
 <script src="/auth.js" defer></script>
 </body>
 </html>

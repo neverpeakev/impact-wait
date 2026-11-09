@@ -197,6 +197,7 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
   <main id="main" aria-live="polite"><div class="skeleton" aria-label="Loading"></div></main>
 </div>
 
+<script src="/attrib.js"></script>
 <script src="/auth.js"></script>
 <script>
 (() => {
@@ -709,6 +710,7 @@ body.mobile .tabs button small{font:500 11.5px/1 "Public Sans",sans-serif;color:
   // ------------------------------------------------------------ shared wiring
   function wire(host) {
     host.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      if (window.VDA && acct && b.dataset.copy === installCmd()) VDA.track("install_copy", "app");
       try { await navigator.clipboard.writeText(b.dataset.copy); } catch (_) { const t = document.createElement("textarea"); t.value = b.dataset.copy; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
       if (b.classList.contains("copy")) { const was = b.textContent; b.textContent = "Copied"; b.classList.add("done"); setTimeout(() => { b.textContent = was; b.classList.remove("done"); }, 1600); }
     }));

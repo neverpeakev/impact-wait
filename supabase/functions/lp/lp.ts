@@ -1,16 +1,20 @@
 // Landing-page test capture: page views and sign-ups for the offer test (cash / prize / give).
 // Separate from the goodwait ad API on purpose: nothing here can affect ads, earners or payouts.
 //
-// POST {kind: "view"|"signup"|"tools", variant, session, email?, tools?, utm?, ref?, hp?}
+// POST {kind: "view"|"signup"|"tools"|"cta"|"install_copy", variant, session, email?, tools?, utm?, ref?, hp?}
+// - "cta" and "install_copy" are funnel steps with no email. Variant "app" = the /app dashboard.
 // - Only listed origins get CORS; the rest are refused.
 // - Honeypot field (hp) filled = silently accepted and dropped (bots learn nothing).
 // - Rate limits per hashed IP; raw IPs are never stored.
 
-export const VARIANTS = new Set(["cash", "prize", "give"]);
+export const VARIANTS = new Set(["cash", "prize", "give", "app"]);
+// Steps recorded like a view: no email, same rate limit.
+export const STEP_KINDS = new Set(["view", "cta", "install_copy"]);
 export const TOOLS = new Set(["claude-code", "cursor", "codex", "chatgpt", "claude", "gemini", "copilot", "other"]);
 const SESSION_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,185}\.[a-z]{2,24}$/i;
-const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "msclkid", "ttclid", "rdt_cid"];
+// "via" = a creator or partner code from a tracked link (vibedough.com/?via=name).
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "msclkid", "ttclid", "rdt_cid", "via"];
 
 export type LpEvent = { variant: string; kind: string; session_id: string; utm: Record<string, string>; referrer: string | null; ip_hash: string; ua: string | null };
 export interface LpStore {
@@ -56,7 +60,9 @@ export function createLp(opts: { store: LpStore; origins: (string | RegExp)[]; s
       const kind = String(b.kind || "");
       const variant = String(b.variant || "");
       const session = String(b.session || "");
-      if (!["view", "signup", "tools"].includes(kind) || !VARIANTS.has(variant) || !SESSION_RE.test(session)) return json({ error: "bad request" }, 400);
+      if (!(STEP_KINDS.has(kind) || kind === "signup" || kind === "tools") || !VARIANTS.has(variant) || !SESSION_RE.test(session)) return json({ error: "bad request" }, 400);
+      // The dashboard only reports funnel steps; sign-ups come from the landing pages.
+      if (variant === "app" && !STEP_KINDS.has(kind)) return json({ error: "bad request" }, 400);
       // Honeypot: a bot filled the hidden field. Say yes, keep nothing.
       if (typeof b.hp === "string" && b.hp.length > 0) return json({ ok: true });
 
@@ -68,7 +74,7 @@ export function createLp(opts: { store: LpStore; origins: (string | RegExp)[]; s
       const referrer = typeof b.ref === "string" && /^https?:\/\//i.test(b.ref) ? b.ref.slice(0, 300) : null;
       const ua = (req.headers.get("user-agent") || "").slice(0, 200) || null;
 
-      if (kind === "view") {
+      if (STEP_KINDS.has(kind)) {
         await store.insertEvent({ variant, kind, session_id: session, utm, referrer, ip_hash: ipHash, ua });
         return json({ ok: true });
       }

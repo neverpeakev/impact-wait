@@ -121,3 +121,24 @@ Deno.test("a forged x-forwarded-for can't dodge the sign-up limit: Cloudflare's 
   for (let i = 0; i < 5; i++) assertEquals((await t.h(req(i))).status, 200);
   assertEquals((await t.h(req(99))).status, 429);
 });
+
+Deno.test("funnel steps: cta and install_copy are stored like views, with the creator code kept", async () => {
+  const t = mk();
+  const a = await t.h(post({ kind: "cta", variant: "cash", session: SESSION, utm: { via: "somecreator", utm_source: "youtube" } }));
+  const b = await t.h(post({ kind: "install_copy", variant: "app", session: SESSION }));
+  assertEquals(a.status, 200);
+  assertEquals(b.status, 200);
+  assertEquals(t.events.map((e) => `${e.variant}/${e.kind}`), ["cash/cta", "app/install_copy"]);
+  assertEquals(t.events[0].utm, { via: "somecreator", utm_source: "youtube" });
+  assertEquals(t.list.size, 0); // no email, no waitlist row
+});
+
+Deno.test("the dashboard variant can't sign up or set tools, and unknown kinds are refused", async () => {
+  const t = mk();
+  const s = await t.h(post({ kind: "signup", variant: "app", session: SESSION, email: "a@b.co" }));
+  const k = await t.h(post({ kind: "purchase", variant: "cash", session: SESSION }));
+  assertEquals(s.status, 400);
+  assertEquals(k.status, 400);
+  assertEquals(t.events.length, 0);
+  assertEquals(t.list.size, 0);
+});

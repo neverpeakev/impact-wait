@@ -400,3 +400,26 @@ Deno.test("chat titles: first message on one line, trimmed to 60 characters", ()
   assertEquals(chatTitle("x".repeat(80)), "x".repeat(57) + "...");
   assertEquals(chatTitle("   "), "New chat");
 });
+
+Deno.test("sign-up attribution: cleanSource keeps only known keys as short plain strings", async () => {
+  const { cleanSource } = await import("../supabase/functions/goodwait/accounts.ts");
+  assertEquals(cleanSource({ via: " somecreator ", utm_source: "youtube", evil: "x", landing: "<b>cash</b>", n: 5 }), { via: "somecreator", utm_source: "youtube", landing: "bcash/b" });
+  assertEquals(cleanSource({ utm_term: "x".repeat(500) })!.utm_term.length, 120);
+  assertEquals(cleanSource({ evil: "x" }), null);
+  assertEquals(cleanSource("via=x"), null);
+  assertEquals(cleanSource(["x"]), null);
+  assertEquals(cleanSource(null), null);
+});
+
+Deno.test("sign-up attribution: /auth/email hands the cleaned source to Auth, and works without one", async () => {
+  const got: unknown[] = [];
+  const auth: AuthApi = {
+    async getUser() { return null; },
+    async signInLink(_email, source) { got.push(source ?? null); return { tokenHash: "th", type: "magiclink", otp: "123456" }; },
+  };
+  const app = createApp({ store: memStore({}), keys: {}, baseUrl: BASE, salt: "t", auth, appUrl: "https://vibedough.com/app", mailer: async () => true });
+  const send = (body: unknown, ip: string) => app(new Request(BASE + "/auth/email", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "cf-connecting-ip": ip } }));
+  assertEquals((await send({ email: "new@example.com", source: { via: "somecreator", utm_source: "x", bad: "y" } }, "2.2.2.2")).status, 200);
+  assertEquals((await send({ email: "plain@example.com" }, "3.3.3.3")).status, 200);
+  assertEquals(got, [{ via: "somecreator", utm_source: "x" }, null]);
+});

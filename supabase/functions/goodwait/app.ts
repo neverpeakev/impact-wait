@@ -38,7 +38,7 @@
 // to the earner, within the program's daily cap and minimum gap. Money is only ever owed
 // from settled network revenue (see the settle() SQL function), never from estimates.
 import { EMBED_JS } from "./embed.ts";
-import { type Account, type AuthApi, type Install, installCommand, type Mailer, normalizeInstallCode, parseTaxForm, signInEmail, type TaxForm, type TaxFormSummary, welcomeEmail } from "./accounts.ts";
+import { type Account, type AuthApi, cleanSource, type Install, installCommand, type Mailer, normalizeInstallCode, parseTaxForm, signInEmail, type TaxForm, type TaxFormSummary, welcomeEmail } from "./accounts.ts";
 import type { ChatFn, ChatTurn } from "./chat.ts";
 import { type Ad, type Attempt, confirmImpression, reportClick, runChain } from "./networks.ts";
 
@@ -577,7 +577,7 @@ export function createApp(opts: { store: Store; keys: Keys; baseUrl: string; sal
         if ((await store.rateCount("signin_email", emailKey, 3600)) >= SIGNIN_PER_EMAIL_HOUR) return json({ error: "We've sent a few links already. Check your inbox (and spam), or try again in an hour." }, 429, { "Retry-After": "3600" });
         if ((await store.rateCount("signin_net", ipHash, 3600)) >= SIGNIN_PER_NETWORK_HOUR) return json({ error: "Too many sign-ins from this network. Try again in an hour." }, 429, { "Retry-After": "3600" });
         await Promise.all([store.rateHit("signin_email", emailKey), store.rateHit("signin_net", ipHash)]);
-        const link = await opts.auth.signInLink(email);
+        const link = await opts.auth.signInLink(email, cleanSource(b.source));
         if (!link) return json({ error: "We couldn't send a link to that address. Check it and try again." }, 502);
         const url = `${appUrl}?th=${encodeURIComponent(link.tokenHash)}&tt=${encodeURIComponent(link.type)}`;
         const sent = await mailer(signInEmail(email, url, link.otp)).catch(() => false);

@@ -58,12 +58,12 @@ const auth: AuthApi = {
     userCache.set(token, { user, at: Date.now() });
     return user;
   },
-  async signInLink(email) {
+  async signInLink(email, source) {
     let r = await admin("/admin/generate_link", { type: "magiclink", email });
     if (r.status === 404 || r.status === 422) {
       // No such user yet: create them (unconfirmed; the link confirms the address), then ask again.
       await r.body?.cancel();
-      const c = await admin("/admin/users", { email, email_confirm: false, user_metadata: { product: "vibedough" } });
+      const c = await admin("/admin/users", { email, email_confirm: false, user_metadata: source ? { product: "vibedough", source } : { product: "vibedough" } });
       if (!c.ok && c.status !== 422) { console.log(`auth create user ${c.status} ${(await c.text()).slice(0, 200)}`); return null; }
       await c.body?.cancel();
       r = await admin("/admin/generate_link", { type: "magiclink", email });

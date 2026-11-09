@@ -8,7 +8,23 @@ export type SignInLink = { tokenHash: string; type: string; otp: string | null }
 export interface AuthApi {
   getUser(accessToken: string): Promise<AuthUser | null>;
   // Creates the user when they don't exist yet. Null when Auth refused (bad address, rate limit).
-  signInLink(email: string): Promise<SignInLink | null>;
+  // source = first-touch attribution, saved on a NEW user only (an existing user's is never changed).
+  signInLink(email: string, source?: Record<string, string> | null): Promise<SignInLink | null>;
+}
+
+// First-touch attribution the landing pages send with a sign-up: where the person came from.
+// Only these keys, short plain strings; anything else is dropped. Null when nothing is left.
+const SOURCE_KEYS = ["via", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "landing", "variant", "ref_host", "first_seen"];
+export function cleanSource(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, string> = {};
+  for (const k of SOURCE_KEYS) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v !== "string") continue;
+    const t = v.trim().replace(/[\u0000-\u001f<>]/g, "").slice(0, 120);
+    if (t) out[k] = t;
+  }
+  return Object.keys(out).length ? out : null;
 }
 export type Email = { to: string; subject: string; html: string; text: string; tag: string };
 export type Mailer = (m: Email) => Promise<boolean>;
